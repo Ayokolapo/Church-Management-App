@@ -1,0 +1,85 @@
+Project Name: The Waypoint – Church Members Management System
+Objective:
+Build a mobile responsive web application for a church to manage its church member database, attendance and first timers. 
+The application should have:
+A member database with the fields listed below under additional features
+A feature that provides a form to create new members
+A first timer database that manages first timers and adds the first timers to the member database 
+A feature that marks attendance of Sunday service for members who attended and also keeps history of attendance to all services.
+
+Additional features
+Member Database:
+Stores:
+First Name
+Last Name
+Gender (Male or Female) 
+Mobile Phone
+Email
+Address
+Occupation (Students/Workers/Unemployed/Self-Employed).
+Join Date
+Cluster (As defined for the branch) 
+Follow Up Worker (would be defined based on migrated data) 
+Cell (as defined for the branch) 
+Status (Crowd, Potential, Committed, Worker, Leader) 
+Last Attended (should be autocomputed from the Sunday service attendance table) 
+Times Attended (should be autocomputed from the Sunday service attendance table) 
+Time since Attended (should be autocomputed from the Sunday service attendance table) 
+Summary Notes
+Date of Birth (DD-MM-YYYY)
+Follow Up Type (General, Adhoc) 
+Archive (default is empty, other values include : Relocated, Has a church, wrong number, unreachable, not interested) 
+
+On the members tab, I should be able to filter/Search by the various data points.
+
+On the tab,I should be able to select the columns/datapoints I want to be visible per time. I should be able to select all columns or deselect columns I want to be invisible.
+
+
+First timers Module
+
+Add a first timer form that contains these fields: 
+First Name
+Last Name
+Gender
+Mobile Phone
+Email
+Address
+Date of Birth (DD-MM-YYYY) 
+What axis is closest to where you stay. (The values here should be based on defined clusters from the members table) 
+Are you based in this city (yes or no) 
+Are we seeing you again? (yes, no or maybe) 
+What did you enjoy about service (multi select - sermon, prayer, praise and worship, ambience) 
+How did you hear about Olkia (Oikia member, social media, billboard/lamp post
+Who invited you?
+Do you have feedback on what we can improve 
+
+Make the form a shareable link that could be sent to first timers to fill on their mobile phones. 
+
+Once form is submitted, first timer should be automatically added to member table/module
+
+
+ Attendance Management:
+Attendance should cover Sunday service attendance
+
+Default "Absent" System:
+
+All members are marked "Absent" by default.
+
+Tap a button next to each name to toggle to "Present".
+
+Auto-save feature after each toggle.
+
+Provide a status filter through which attendance can be filled per status. Add a select all button through which all members with a particular status can be marked as present. 
+
+Status values are Crowd, Potential, Committed, Worker and Leader
+
+Provide ability to search members using name or phone number
+
+
+Other features
+Provide ability to edit member database, first timers and service attendance
+
+When an update is made to member table it should reflect name let it reflect on service attendance and first timer databases especially for fields that cut across e.g. Name, phone number, email etc.
+
+I want to be able to import members into the database. I also want to import attendance and first timers. Create templates (in CSV) I can use to upload.
+For attendance, I need to be able to upload based on first name, last name and phone number to uniquely identify each member.
