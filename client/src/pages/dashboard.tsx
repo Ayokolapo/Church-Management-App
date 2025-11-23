@@ -2,15 +2,35 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Users, UserPlus, CalendarCheck, TrendingUp } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import { format } from "date-fns";
+import type { Member, FirstTimer } from "@shared/schema";
+
+const COLORS = ["#3b82f6", "#8b5cf6", "#ec4899", "#f59e0b", "#10b981"];
 
 export default function Dashboard() {
-  const { data: stats, isLoading } = useQuery<{
+  const { data: stats, isLoading: statsLoading } = useQuery<{
     totalMembers: number;
     totalFirstTimers: number;
     recentAttendance: number;
     newMembersThisMonth: number;
   }>({
     queryKey: ["/api/stats"],
+  });
+
+  const { data: trends, isLoading: trendsLoading } = useQuery<{ date: string; present: number; total: number }[]>({
+    queryKey: ["/api/analytics/attendance-trends"],
+  });
+
+  const { data: statusDistribution, isLoading: statusLoading } = useQuery<{ status: string; count: number }[]>({
+    queryKey: ["/api/analytics/status-distribution"],
+  });
+
+  const { data: activity, isLoading: activityLoading } = useQuery<{
+    recentMembers: Member[];
+    recentFirstTimers: FirstTimer[];
+  }>({
+    queryKey: ["/api/analytics/recent-activity"],
   });
 
   const statCards = [
@@ -40,6 +60,17 @@ export default function Dashboard() {
     },
   ];
 
+  const attendanceRate = trends && trends.length > 0 
+    ? Math.round((trends.reduce((sum, t) => sum + t.present, 0) / trends.reduce((sum, t) => sum + t.total, 0)) * 100)
+    : 0;
+
+  const formattedTrends = trends?.map(t => ({
+    date: format(new Date(t.date), "MMM dd"),
+    present: t.present,
+    total: t.total,
+    rate: t.total > 0 ? Math.round((t.present / t.total) * 100) : 0,
+  })) || [];
+
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
       <div>
@@ -55,7 +86,7 @@ export default function Dashboard() {
               <stat.icon className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              {isLoading ? (
+              {statsLoading ? (
                 <Skeleton className="h-8 w-20" />
               ) : (
                 <>
@@ -70,7 +101,91 @@ export default function Dashboard() {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Attendance Trends (Last 30 Days)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {trendsLoading ? (
+              <div className="h-64 flex items-center justify-center">
+                <Skeleton className="h-64 w-full" />
+              </div>
+            ) : !trends || trends.length === 0 ? (
+              <div className="h-64 flex items-center justify-center text-sm text-muted-foreground">
+                No attendance data available yet
+              </div>
+            ) : (
+              <>
+                <ResponsiveContainer width="100%" height={300}>
+                  <LineChart data={formattedTrends}>
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                    <XAxis dataKey="date" className="text-xs" />
+                    <YAxis className="text-xs" />
+                    <Tooltip 
+                      contentStyle={{ 
+                        backgroundColor: 'hsl(var(--background))', 
+                        border: '1px solid hsl(var(--border))',
+                        borderRadius: '6px'
+                      }}
+                    />
+                    <Legend />
+                    <Line type="monotone" dataKey="present" stroke="#3b82f6" name="Present" strokeWidth={2} />
+                    <Line type="monotone" dataKey="total" stroke="#8b5cf6" name="Total" strokeWidth={2} />
+                  </LineChart>
+                </ResponsiveContainer>
+                <div className="mt-4 text-sm text-muted-foreground text-center">
+                  Average attendance rate: {attendanceRate}%
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Member Status Distribution</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {statusLoading ? (
+              <div className="h-64 flex items-center justify-center">
+                <Skeleton className="h-64 w-full" />
+              </div>
+            ) : !statusDistribution || statusDistribution.length === 0 ? (
+              <div className="h-64 flex items-center justify-center text-sm text-muted-foreground">
+                No member data available yet
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie
+                    data={statusDistribution}
+                    dataKey="count"
+                    nameKey="status"
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={100}
+                    label={(entry) => `${entry.status}: ${entry.count}`}
+                  >
+                    {statusDistribution.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip 
+                    contentStyle={{ 
+                      backgroundColor: 'hsl(var(--background))', 
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '6px'
+                    }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
           <CardHeader>
             <CardTitle>Quick Actions</CardTitle>
@@ -107,10 +222,53 @@ export default function Dashboard() {
           <CardHeader>
             <CardTitle>Recent Activity</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="text-sm text-muted-foreground">
-              Activity tracking will be available once you start managing members and recording attendance.
-            </div>
+          <CardContent className="space-y-4">
+            {activityLoading ? (
+              <div className="space-y-3">
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-3/4" />
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-2/3" />
+              </div>
+            ) : activity && (activity.recentMembers.length > 0 || activity.recentFirstTimers.length > 0) ? (
+              <>
+                {activity.recentMembers.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-medium mb-2">New Members</h3>
+                    <div className="space-y-2">
+                      {activity.recentMembers.slice(0, 3).map((member) => (
+                        <div key={member.id} className="text-sm flex justify-between items-center">
+                          <span className="font-medium">{member.firstName} {member.lastName}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {format(new Date(member.createdAt), "MMM dd, yyyy")}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {activity.recentFirstTimers.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-medium mb-2">Recent First Timers</h3>
+                    <div className="space-y-2">
+                      {activity.recentFirstTimers.slice(0, 3).map((firstTimer) => (
+                        <div key={firstTimer.id} className="text-sm flex justify-between items-center">
+                          <span className="font-medium">{firstTimer.firstName} {firstTimer.lastName}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {format(new Date(firstTimer.createdAt), "MMM dd, yyyy")}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="text-sm text-muted-foreground">
+                No recent activity to display
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

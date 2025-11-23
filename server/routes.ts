@@ -20,6 +20,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Analytics endpoints
+  app.get("/api/analytics/attendance-trends", async (req, res) => {
+    try {
+      const days = req.query.days ? parseInt(req.query.days as string) : 30;
+      const trends = await storage.getAttendanceTrends(days);
+      res.json(trends);
+    } catch (error) {
+      console.error("Error fetching attendance trends:", error);
+      res.status(500).json({ error: "Failed to fetch attendance trends" });
+    }
+  });
+
+  app.get("/api/analytics/status-distribution", async (req, res) => {
+    try {
+      const distribution = await storage.getMemberStatusDistribution();
+      res.json(distribution);
+    } catch (error) {
+      console.error("Error fetching status distribution:", error);
+      res.status(500).json({ error: "Failed to fetch status distribution" });
+    }
+  });
+
+  app.get("/api/analytics/recent-activity", async (req, res) => {
+    try {
+      const activity = await storage.getRecentActivity();
+      res.json(activity);
+    } catch (error) {
+      console.error("Error fetching recent activity:", error);
+      res.status(500).json({ error: "Failed to fetch recent activity" });
+    }
+  });
+
   // Member routes
   app.get("/api/members", async (req, res) => {
     try {

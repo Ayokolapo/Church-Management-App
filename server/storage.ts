@@ -39,6 +39,14 @@ export interface IStorage {
     recentAttendance: number;
     newMembersThisMonth: number;
   }>;
+  
+  // Analytics
+  getAttendanceTrends(days?: number): Promise<{ date: string; present: number; total: number }[]>;
+  getMemberStatusDistribution(): Promise<{ status: string; count: number }[]>;
+  getRecentActivity(): Promise<{
+    recentMembers: Member[];
+    recentFirstTimers: FirstTimer[];
+  }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -295,6 +303,65 @@ export class DatabaseStorage implements IStorage {
       recentAttendance: recentAttendance.count,
       newMembersThisMonth: newMembers.count,
     };
+  }
+
+  async getAttendanceTrends(days: number = 30): Promise<{ date: string; present: number; total: number }[]> {
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(endDate.getDate() - days);
+    
+    const startDateStr = startDate.toISOString().split("T")[0];
+    const endDateStr = endDate.toISOString().split("T")[0];
+
+    const trends = await db
+      .select({
+        date: attendance.serviceDate,
+        present: sql<number>`COUNT(CASE WHEN ${attendance.status} = 'Present' THEN 1 END)::int`,
+        total: sql<number>`COUNT(*)::int`,
+      })
+      .from(attendance)
+      .where(
+        and(
+          sql`${attendance.serviceDate} >= ${startDateStr}`,
+          sql`${attendance.serviceDate} <= ${endDateStr}`
+        )
+      )
+      .groupBy(attendance.serviceDate)
+      .orderBy(attendance.serviceDate);
+
+    return trends;
+  }
+
+  async getMemberStatusDistribution(): Promise<{ status: string; count: number }[]> {
+    const distribution = await db
+      .select({
+        status: members.status,
+        count: sql<number>`COUNT(*)::int`,
+      })
+      .from(members)
+      .groupBy(members.status);
+
+    return distribution;
+  }
+
+  async getRecentActivity(): Promise<{
+    recentMembers: Member[];
+    recentFirstTimers: FirstTimer[];
+  }> {
+    const recentMembers = await db
+      .select()
+      .from(members)
+      .orderBy(desc(members.createdAt))
+      .limit(5);
+
+    const recentFirstTimers = await db
+      .select()
+      .from(firstTimers)
+      .where(sql`${firstTimers.convertedToMember} IS NULL`)
+      .orderBy(desc(firstTimers.createdAt))
+      .limit(5);
+
+    return { recentMembers, recentFirstTimers };
   }
 }
 
