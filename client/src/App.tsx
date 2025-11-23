@@ -10,6 +10,7 @@ import Members from "@/pages/members";
 import FirstTimers from "@/pages/first-timers";
 import Attendance from "@/pages/attendance";
 import Communications from "@/pages/communications";
+import FollowUpTasks from "@/pages/follow-up-tasks";
 import FirstTimerForm from "@/pages/first-timer-form";
 import NotFound from "@/pages/not-found";
 
@@ -21,6 +22,7 @@ function Router() {
       <Route path="/first-timers" component={FirstTimers} />
       <Route path="/attendance" component={Attendance} />
       <Route path="/communications" component={Communications} />
+      <Route path="/follow-up-tasks" component={FollowUpTasks} />
       <Route path="/first-timer-form" component={FirstTimerForm} />
       <Route component={NotFound} />
     </Switch>

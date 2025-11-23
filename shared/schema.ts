@@ -65,6 +65,20 @@ export const communications = pgTable("communications", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const followUpTasks = pgTable("follow_up_tasks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  memberId: varchar("member_id").notNull().references(() => members.id, { onDelete: 'cascade' }),
+  title: text("title").notNull(),
+  description: text("description"),
+  assignedTo: text("assigned_to").notNull(),
+  dueDate: date("due_date").notNull(),
+  status: text("status").notNull().default('Pending'),
+  priority: text("priority").notNull().default('Medium'),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 export const insertMemberSchema = createInsertSchema(members, {
   email: z.string().email().optional().or(z.literal('')),
   mobilePhone: z.string().min(1, "Mobile phone is required"),
@@ -113,6 +127,19 @@ export const insertCommunicationSchema = createInsertSchema(communications, {
   createdAt: true,
 });
 
+export const insertFollowUpTaskSchema = createInsertSchema(followUpTasks, {
+  title: z.string().min(1, "Title is required"),
+  description: z.string().optional(),
+  assignedTo: z.string().min(1, "Assigned to is required"),
+  status: z.enum(['Pending', 'In Progress', 'Completed', 'Cancelled']),
+  priority: z.enum(['Low', 'Medium', 'High', 'Urgent']),
+}).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  completedAt: true,
+});
+
 export type Member = typeof members.$inferSelect;
 export type InsertMember = z.infer<typeof insertMemberSchema>;
 export type FirstTimer = typeof firstTimers.$inferSelect;
@@ -121,9 +148,15 @@ export type Attendance = typeof attendance.$inferSelect;
 export type InsertAttendance = z.infer<typeof insertAttendanceSchema>;
 export type Communication = typeof communications.$inferSelect;
 export type InsertCommunication = z.infer<typeof insertCommunicationSchema>;
+export type FollowUpTask = typeof followUpTasks.$inferSelect;
+export type InsertFollowUpTask = z.infer<typeof insertFollowUpTaskSchema>;
 
 export type MemberWithAttendanceStats = Member & {
   lastAttended: string | null;
   timesAttended: number;
   timeSinceAttended: number | null;
+};
+
+export type FollowUpTaskWithMember = FollowUpTask & {
+  member: Member;
 };

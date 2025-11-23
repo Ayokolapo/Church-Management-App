@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertMemberSchema, insertFirstTimerSchema, insertAttendanceSchema, insertCommunicationSchema } from "@shared/schema";
+import { insertMemberSchema, insertFirstTimerSchema, insertAttendanceSchema, insertCommunicationSchema, insertFollowUpTaskSchema } from "@shared/schema";
 import multer from "multer";
 import { parse } from "csv-parse/sync";
 import { stringify } from "csv-stringify/sync";
@@ -514,6 +514,77 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error importing attendance:", error);
       res.status(500).json({ error: "Failed to import attendance" });
+    }
+  });
+
+  // Follow-up Tasks endpoints
+  app.get("/api/follow-up-tasks", async (req, res) => {
+    try {
+      const { assignedTo, status, memberId } = req.query;
+      const tasks = await storage.getFollowUpTasks({
+        assignedTo: assignedTo as string,
+        status: status as string,
+        memberId: memberId as string,
+      });
+      res.json(tasks);
+    } catch (error) {
+      console.error("Error fetching follow-up tasks:", error);
+      res.status(500).json({ error: "Failed to fetch follow-up tasks" });
+    }
+  });
+
+  app.get("/api/follow-up-tasks/:id", async (req, res) => {
+    try {
+      const task = await storage.getFollowUpTaskById(req.params.id);
+      if (!task) {
+        return res.status(404).json({ error: "Task not found" });
+      }
+      res.json(task);
+    } catch (error) {
+      console.error("Error fetching follow-up task:", error);
+      res.status(500).json({ error: "Failed to fetch follow-up task" });
+    }
+  });
+
+  app.post("/api/follow-up-tasks", async (req, res) => {
+    try {
+      const validatedData = insertFollowUpTaskSchema.parse(req.body);
+      const task = await storage.createFollowUpTask(validatedData);
+      res.json(task);
+    } catch (error: any) {
+      console.error("Error creating follow-up task:", error);
+      res.status(400).json({ error: error.message || "Failed to create follow-up task" });
+    }
+  });
+
+  app.patch("/api/follow-up-tasks/:id", async (req, res) => {
+    try {
+      const validatedData = insertFollowUpTaskSchema.partial().parse(req.body);
+      const task = await storage.updateFollowUpTask(req.params.id, validatedData);
+      res.json(task);
+    } catch (error: any) {
+      console.error("Error updating follow-up task:", error);
+      res.status(400).json({ error: error.message || "Failed to update follow-up task" });
+    }
+  });
+
+  app.delete("/api/follow-up-tasks/:id", async (req, res) => {
+    try {
+      await storage.deleteFollowUpTask(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting follow-up task:", error);
+      res.status(500).json({ error: "Failed to delete follow-up task" });
+    }
+  });
+
+  app.post("/api/follow-up-tasks/:id/complete", async (req, res) => {
+    try {
+      const task = await storage.completeFollowUpTask(req.params.id);
+      res.json(task);
+    } catch (error) {
+      console.error("Error completing follow-up task:", error);
+      res.status(500).json({ error: "Failed to complete follow-up task" });
     }
   });
 

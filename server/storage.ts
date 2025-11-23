@@ -3,6 +3,7 @@ import {
   firstTimers,
   attendance,
   communications,
+  followUpTasks,
   type Member,
   type InsertMember,
   type FirstTimer,
@@ -11,7 +12,10 @@ import {
   type InsertAttendance,
   type Communication,
   type InsertCommunication,
+  type FollowUpTask,
+  type InsertFollowUpTask,
   type MemberWithAttendanceStats,
+  type FollowUpTaskWithMember,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, sql, desc } from "drizzle-orm";
@@ -54,6 +58,14 @@ export interface IStorage {
   // Communications
   sendBulkCommunication(communication: InsertCommunication): Promise<Communication>;
   getCommunications(): Promise<Communication[]>;
+  
+  // Follow-up Tasks
+  getFollowUpTasks(filters?: { assignedTo?: string; status?: string; memberId?: string }): Promise<FollowUpTaskWithMember[]>;
+  getFollowUpTaskById(id: string): Promise<FollowUpTaskWithMember | undefined>;
+  createFollowUpTask(task: InsertFollowUpTask): Promise<FollowUpTask>;
+  updateFollowUpTask(id: string, task: Partial<InsertFollowUpTask>): Promise<FollowUpTask>;
+  deleteFollowUpTask(id: string): Promise<void>;
+  completeFollowUpTask(id: string): Promise<FollowUpTask>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -390,6 +402,107 @@ export class DatabaseStorage implements IStorage {
       .limit(50);
     
     return comms;
+  }
+
+  async getFollowUpTasks(filters?: {
+    assignedTo?: string;
+    status?: string;
+    memberId?: string;
+  }): Promise<FollowUpTaskWithMember[]> {
+    const conditions = [];
+    if (filters?.assignedTo) {
+      conditions.push(eq(followUpTasks.assignedTo, filters.assignedTo));
+    }
+    if (filters?.status) {
+      conditions.push(eq(followUpTasks.status, filters.status));
+    }
+    if (filters?.memberId) {
+      conditions.push(eq(followUpTasks.memberId, filters.memberId));
+    }
+
+    let query = db
+      .select({
+        id: followUpTasks.id,
+        memberId: followUpTasks.memberId,
+        title: followUpTasks.title,
+        description: followUpTasks.description,
+        assignedTo: followUpTasks.assignedTo,
+        dueDate: followUpTasks.dueDate,
+        status: followUpTasks.status,
+        priority: followUpTasks.priority,
+        completedAt: followUpTasks.completedAt,
+        createdAt: followUpTasks.createdAt,
+        updatedAt: followUpTasks.updatedAt,
+        member: members,
+      })
+      .from(followUpTasks)
+      .innerJoin(members, eq(followUpTasks.memberId, members.id));
+
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions)) as any;
+    }
+
+    query = query.orderBy(followUpTasks.dueDate) as any;
+
+    const results = await query;
+    return results;
+  }
+
+  async getFollowUpTaskById(id: string): Promise<FollowUpTaskWithMember | undefined> {
+    const [result] = await db
+      .select({
+        id: followUpTasks.id,
+        memberId: followUpTasks.memberId,
+        title: followUpTasks.title,
+        description: followUpTasks.description,
+        assignedTo: followUpTasks.assignedTo,
+        dueDate: followUpTasks.dueDate,
+        status: followUpTasks.status,
+        priority: followUpTasks.priority,
+        completedAt: followUpTasks.completedAt,
+        createdAt: followUpTasks.createdAt,
+        updatedAt: followUpTasks.updatedAt,
+        member: members,
+      })
+      .from(followUpTasks)
+      .innerJoin(members, eq(followUpTasks.memberId, members.id))
+      .where(eq(followUpTasks.id, id))
+      .limit(1);
+
+    return result;
+  }
+
+  async createFollowUpTask(task: InsertFollowUpTask): Promise<FollowUpTask> {
+    const [newTask] = await db.insert(followUpTasks).values(task).returning();
+    return newTask;
+  }
+
+  async updateFollowUpTask(id: string, task: Partial<InsertFollowUpTask>): Promise<FollowUpTask> {
+    const [updated] = await db
+      .update(followUpTasks)
+      .set({ ...task, updatedAt: sql`NOW()` })
+      .where(eq(followUpTasks.id, id))
+      .returning();
+
+    return updated;
+  }
+
+  async deleteFollowUpTask(id: string): Promise<void> {
+    await db.delete(followUpTasks).where(eq(followUpTasks.id, id));
+  }
+
+  async completeFollowUpTask(id: string): Promise<FollowUpTask> {
+    const [completed] = await db
+      .update(followUpTasks)
+      .set({
+        status: "Completed",
+        completedAt: sql`NOW()`,
+        updatedAt: sql`NOW()`,
+      })
+      .where(eq(followUpTasks.id, id))
+      .returning();
+
+    return completed;
   }
 }
 
