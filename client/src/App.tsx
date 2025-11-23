@@ -9,6 +9,7 @@ import Dashboard from "@/pages/dashboard";
 import Members from "@/pages/members";
 import FirstTimers from "@/pages/first-timers";
 import Attendance from "@/pages/attendance";
+import Communications from "@/pages/communications";
 import FirstTimerForm from "@/pages/first-timer-form";
 import NotFound from "@/pages/not-found";
 
@@ -19,6 +20,7 @@ function Router() {
       <Route path="/members" component={Members} />
       <Route path="/first-timers" component={FirstTimers} />
       <Route path="/attendance" component={Attendance} />
+      <Route path="/communications" component={Communications} />
       <Route path="/first-timer-form" component={FirstTimerForm} />
       <Route component={NotFound} />
     </Switch>

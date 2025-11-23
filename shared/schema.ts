@@ -54,6 +54,17 @@ export const attendance = pgTable("attendance", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const communications = pgTable("communications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  type: text("type").notNull(), // 'SMS' or 'Email'
+  subject: text("subject"),
+  message: text("message").notNull(),
+  recipientCount: integer("recipient_count").notNull(),
+  filters: text("filters").notNull(), // JSON string of applied filters
+  sentBy: text("sent_by").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const insertMemberSchema = createInsertSchema(members, {
   email: z.string().email().optional().or(z.literal('')),
   mobilePhone: z.string().min(1, "Mobile phone is required"),
@@ -90,12 +101,26 @@ export const insertAttendanceSchema = createInsertSchema(attendance, {
   createdAt: true,
 });
 
+export const insertCommunicationSchema = createInsertSchema(communications, {
+  type: z.enum(['SMS', 'Email']),
+  subject: z.string().optional(),
+  message: z.string().min(1, "Message is required"),
+  recipientCount: z.number().min(1, "At least one recipient required"),
+  filters: z.string(),
+  sentBy: z.string().min(1, "Sender is required"),
+}).omit({
+  id: true,
+  createdAt: true,
+});
+
 export type Member = typeof members.$inferSelect;
 export type InsertMember = z.infer<typeof insertMemberSchema>;
 export type FirstTimer = typeof firstTimers.$inferSelect;
 export type InsertFirstTimer = z.infer<typeof insertFirstTimerSchema>;
 export type Attendance = typeof attendance.$inferSelect;
 export type InsertAttendance = z.infer<typeof insertAttendanceSchema>;
+export type Communication = typeof communications.$inferSelect;
+export type InsertCommunication = z.infer<typeof insertCommunicationSchema>;
 
 export type MemberWithAttendanceStats = Member & {
   lastAttended: string | null;

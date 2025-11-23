@@ -2,12 +2,15 @@ import {
   members,
   firstTimers,
   attendance,
+  communications,
   type Member,
   type InsertMember,
   type FirstTimer,
   type InsertFirstTimer,
   type Attendance,
   type InsertAttendance,
+  type Communication,
+  type InsertCommunication,
   type MemberWithAttendanceStats,
 } from "@shared/schema";
 import { db } from "./db";
@@ -47,6 +50,10 @@ export interface IStorage {
     recentMembers: Member[];
     recentFirstTimers: FirstTimer[];
   }>;
+  
+  // Communications
+  sendBulkCommunication(communication: InsertCommunication): Promise<Communication>;
+  getCommunications(): Promise<Communication[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -362,6 +369,27 @@ export class DatabaseStorage implements IStorage {
       .limit(5);
 
     return { recentMembers, recentFirstTimers };
+  }
+
+  async sendBulkCommunication(communication: InsertCommunication): Promise<Communication> {
+    // Note: This stores the communication record but doesn't actually send SMS/Email
+    // In production, this would integrate with Twilio (SMS) or SendGrid (Email)
+    // For now, we just log and save the history
+    console.log(`[SIMULATED] Sending ${communication.type} to ${communication.recipientCount} recipients`);
+    console.log(`Message: ${communication.message}`);
+    
+    const [record] = await db.insert(communications).values(communication).returning();
+    return record;
+  }
+
+  async getCommunications(): Promise<Communication[]> {
+    const comms = await db
+      .select()
+      .from(communications)
+      .orderBy(desc(communications.createdAt))
+      .limit(50);
+    
+    return comms;
   }
 }
 

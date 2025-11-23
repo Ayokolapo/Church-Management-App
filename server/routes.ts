@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertMemberSchema, insertFirstTimerSchema, insertAttendanceSchema } from "@shared/schema";
+import { insertMemberSchema, insertFirstTimerSchema, insertAttendanceSchema, insertCommunicationSchema } from "@shared/schema";
 import multer from "multer";
 import { parse } from "csv-parse/sync";
 import { stringify } from "csv-stringify/sync";
@@ -49,6 +49,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching recent activity:", error);
       res.status(500).json({ error: "Failed to fetch recent activity" });
+    }
+  });
+
+  // Communications endpoints
+  app.post("/api/communications/send", async (req, res) => {
+    try {
+      const validatedData = insertCommunicationSchema.parse(req.body);
+      const communication = await storage.sendBulkCommunication(validatedData);
+      res.json(communication);
+    } catch (error: any) {
+      console.error("Error sending communication:", error);
+      res.status(400).json({ error: error.message || "Failed to send communication" });
+    }
+  });
+
+  app.get("/api/communications", async (req, res) => {
+    try {
+      const communications = await storage.getCommunications();
+      res.json(communications);
+    } catch (error) {
+      console.error("Error fetching communications:", error);
+      res.status(500).json({ error: "Failed to fetch communications" });
     }
   });
 
