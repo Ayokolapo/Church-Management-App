@@ -79,6 +79,23 @@ export const followUpTasks = pgTable("follow_up_tasks", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+export const cells = pgTable("cells", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  cluster: text("cluster").notNull(),
+  leader: text("leader"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const cellAttendance = pgTable("cell_attendance", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  cellId: varchar("cell_id").notNull().references(() => cells.id, { onDelete: 'cascade' }),
+  memberId: varchar("member_id").notNull().references(() => members.id, { onDelete: 'cascade' }),
+  meetingDate: date("meeting_date").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const insertMemberSchema = createInsertSchema(members, {
   email: z.string().email().optional().or(z.literal('')),
   mobilePhone: z.string().min(1, "Mobile phone is required"),
@@ -140,6 +157,25 @@ export const insertFollowUpTaskSchema = createInsertSchema(followUpTasks, {
   completedAt: true,
 });
 
+export const insertCellSchema = createInsertSchema(cells, {
+  name: z.string().min(1, "Cell name is required"),
+  cluster: z.string().min(1, "Cluster is required"),
+  leader: z.string().optional(),
+}).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertCellAttendanceSchema = createInsertSchema(cellAttendance, {
+  cellId: z.string().min(1, "Cell is required"),
+  memberId: z.string().min(1, "Member is required"),
+  meetingDate: z.string().min(1, "Meeting date is required"),
+}).omit({
+  id: true,
+  createdAt: true,
+});
+
 export type Member = typeof members.$inferSelect;
 export type InsertMember = z.infer<typeof insertMemberSchema>;
 export type FirstTimer = typeof firstTimers.$inferSelect;
@@ -158,5 +194,19 @@ export type MemberWithAttendanceStats = Member & {
 };
 
 export type FollowUpTaskWithMember = FollowUpTask & {
+  member: Member;
+};
+
+export type Cell = typeof cells.$inferSelect;
+export type InsertCell = z.infer<typeof insertCellSchema>;
+export type CellAttendance = typeof cellAttendance.$inferSelect;
+export type InsertCellAttendance = z.infer<typeof insertCellAttendanceSchema>;
+
+export type CellWithMembers = Cell & {
+  members: Member[];
+  memberCount: number;
+};
+
+export type CellAttendanceWithMember = CellAttendance & {
   member: Member;
 };

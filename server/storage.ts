@@ -4,6 +4,8 @@ import {
   attendance,
   communications,
   followUpTasks,
+  cells,
+  cellAttendance,
   type Member,
   type InsertMember,
   type FirstTimer,
@@ -16,6 +18,12 @@ import {
   type InsertFollowUpTask,
   type MemberWithAttendanceStats,
   type FollowUpTaskWithMember,
+  type Cell,
+  type InsertCell,
+  type CellAttendance,
+  type InsertCellAttendance,
+  type CellWithMembers,
+  type CellAttendanceWithMember,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, sql, desc } from "drizzle-orm";
@@ -66,6 +74,19 @@ export interface IStorage {
   updateFollowUpTask(id: string, task: Partial<InsertFollowUpTask>): Promise<FollowUpTask>;
   deleteFollowUpTask(id: string): Promise<void>;
   completeFollowUpTask(id: string): Promise<FollowUpTask>;
+  
+  // Cells
+  getCells(cluster?: string): Promise<CellWithMembers[]>;
+  getCellById(id: string): Promise<CellWithMembers | undefined>;
+  createCell(cell: InsertCell): Promise<Cell>;
+  updateCell(id: string, cell: Partial<InsertCell>): Promise<Cell>;
+  deleteCell(id: string): Promise<void>;
+  
+  // Cell Attendance
+  getCellAttendance(cellId: string, meetingDate?: string): Promise<CellAttendanceWithMember[]>;
+  recordCellAttendance(data: InsertCellAttendance): Promise<CellAttendance>;
+  deleteCellAttendance(id: string): Promise<void>;
+  getCellMeetingDates(cellId: string): Promise<string[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -503,6 +524,125 @@ export class DatabaseStorage implements IStorage {
       .returning();
 
     return completed;
+  }
+
+  async getCells(cluster?: string): Promise<CellWithMembers[]> {
+    let query = db.select().from(cells);
+    
+    if (cluster) {
+      query = query.where(eq(cells.cluster, cluster)) as any;
+    }
+    
+    const cellList = await query.orderBy(cells.cluster, cells.name);
+    
+    const cellsWithMembers: CellWithMembers[] = await Promise.all(
+      cellList.map(async (cell) => {
+        const cellMembers = await db
+          .select()
+          .from(members)
+          .where(eq(members.cell, cell.name));
+        
+        return {
+          ...cell,
+          members: cellMembers,
+          memberCount: cellMembers.length,
+        };
+      })
+    );
+    
+    return cellsWithMembers;
+  }
+
+  async getCellById(id: string): Promise<CellWithMembers | undefined> {
+    const [cell] = await db.select().from(cells).where(eq(cells.id, id));
+    if (!cell) return undefined;
+    
+    const cellMembers = await db
+      .select()
+      .from(members)
+      .where(eq(members.cell, cell.name));
+    
+    return {
+      ...cell,
+      members: cellMembers,
+      memberCount: cellMembers.length,
+    };
+  }
+
+  async createCell(cell: InsertCell): Promise<Cell> {
+    const [newCell] = await db.insert(cells).values(cell).returning();
+    return newCell;
+  }
+
+  async updateCell(id: string, cell: Partial<InsertCell>): Promise<Cell> {
+    const [updated] = await db
+      .update(cells)
+      .set({ ...cell, updatedAt: new Date() })
+      .where(eq(cells.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteCell(id: string): Promise<void> {
+    await db.delete(cells).where(eq(cells.id, id));
+  }
+
+  async getCellAttendance(cellId: string, meetingDate?: string): Promise<CellAttendanceWithMember[]> {
+    const conditions = [eq(cellAttendance.cellId, cellId)];
+    if (meetingDate) {
+      conditions.push(eq(cellAttendance.meetingDate, meetingDate));
+    }
+    
+    const records = await db
+      .select({
+        id: cellAttendance.id,
+        cellId: cellAttendance.cellId,
+        memberId: cellAttendance.memberId,
+        meetingDate: cellAttendance.meetingDate,
+        createdAt: cellAttendance.createdAt,
+        member: members,
+      })
+      .from(cellAttendance)
+      .innerJoin(members, eq(cellAttendance.memberId, members.id))
+      .where(and(...conditions))
+      .orderBy(desc(cellAttendance.meetingDate));
+    
+    return records;
+  }
+
+  async recordCellAttendance(data: InsertCellAttendance): Promise<CellAttendance> {
+    const existing = await db
+      .select()
+      .from(cellAttendance)
+      .where(
+        and(
+          eq(cellAttendance.cellId, data.cellId),
+          eq(cellAttendance.memberId, data.memberId),
+          eq(cellAttendance.meetingDate, data.meetingDate)
+        )
+      );
+    
+    if (existing.length > 0) {
+      return existing[0];
+    }
+    
+    const [record] = await db.insert(cellAttendance).values(data).returning();
+    return record;
+  }
+
+  async deleteCellAttendance(id: string): Promise<void> {
+    await db.delete(cellAttendance).where(eq(cellAttendance.id, id));
+  }
+
+  async getCellMeetingDates(cellId: string): Promise<string[]> {
+    const dates = await db
+      .select({ date: cellAttendance.meetingDate })
+      .from(cellAttendance)
+      .where(eq(cellAttendance.cellId, cellId))
+      .groupBy(cellAttendance.meetingDate)
+      .orderBy(desc(cellAttendance.meetingDate));
+    
+    return dates.map(d => d.date);
   }
 }
 
