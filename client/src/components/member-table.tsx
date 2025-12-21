@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,23 +18,11 @@ import { formatDistanceToNow } from "date-fns";
 interface MemberTableProps {
   members: MemberWithAttendanceStats[];
   onEdit: (member: MemberWithAttendanceStats) => void;
+  visibleColumns: Set<string>;
 }
 
-export function MemberTable({ members, onEdit }: MemberTableProps) {
+export function MemberTable({ members, onEdit, visibleColumns }: MemberTableProps) {
   const { toast } = useToast();
-  const [visibleColumns] = useState<Set<string>>(
-    new Set([
-      "name",
-      "gender",
-      "phone",
-      "email",
-      "status",
-      "cluster",
-      "lastAttended",
-      "timesAttended",
-      "actions",
-    ])
-  );
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -93,10 +80,17 @@ export function MemberTable({ members, onEdit }: MemberTableProps) {
             {visibleColumns.has("gender") && <TableHead>Gender</TableHead>}
             {visibleColumns.has("phone") && <TableHead className="font-mono">Phone</TableHead>}
             {visibleColumns.has("email") && <TableHead>Email</TableHead>}
-            {visibleColumns.has("status") && <TableHead>Status</TableHead>}
+            {visibleColumns.has("address") && <TableHead>Address</TableHead>}
+            {visibleColumns.has("occupation") && <TableHead>Occupation</TableHead>}
             {visibleColumns.has("cluster") && <TableHead>Cluster</TableHead>}
+            {visibleColumns.has("cell") && <TableHead>Cell</TableHead>}
+            {visibleColumns.has("status") && <TableHead>Status</TableHead>}
+            {visibleColumns.has("joinDate") && <TableHead>Join Date</TableHead>}
             {visibleColumns.has("lastAttended") && <TableHead>Last Attended</TableHead>}
             {visibleColumns.has("timesAttended") && <TableHead>Times Attended</TableHead>}
+            {visibleColumns.has("dateOfBirth") && <TableHead>Date of Birth</TableHead>}
+            {visibleColumns.has("followUpWorker") && <TableHead>Follow Up Worker</TableHead>}
+            {visibleColumns.has("archive") && <TableHead>Archive Status</TableHead>}
             {visibleColumns.has("actions") && <TableHead className="text-right">Actions</TableHead>}
           </TableRow>
         </TableHeader>
@@ -115,12 +109,26 @@ export function MemberTable({ members, onEdit }: MemberTableProps) {
               {visibleColumns.has("email") && (
                 <TableCell className="text-sm">{member.email || "-"}</TableCell>
               )}
+              {visibleColumns.has("address") && (
+                <TableCell className="text-sm">{member.address || "-"}</TableCell>
+              )}
+              {visibleColumns.has("occupation") && (
+                <TableCell>{member.occupation}</TableCell>
+              )}
+              {visibleColumns.has("cluster") && <TableCell>{member.cluster}</TableCell>}
+              {visibleColumns.has("cell") && (
+                <TableCell>{member.cell || "-"}</TableCell>
+              )}
               {visibleColumns.has("status") && (
                 <TableCell>
                   <Badge variant={getStatusVariant(member.status)}>{member.status}</Badge>
                 </TableCell>
               )}
-              {visibleColumns.has("cluster") && <TableCell>{member.cluster}</TableCell>}
+              {visibleColumns.has("joinDate") && (
+                <TableCell className="text-sm">
+                  {member.joinDate ? new Date(member.joinDate).toLocaleDateString() : "-"}
+                </TableCell>
+              )}
               {visibleColumns.has("lastAttended") && (
                 <TableCell className="text-sm">
                   {member.lastAttended
@@ -130,6 +138,17 @@ export function MemberTable({ members, onEdit }: MemberTableProps) {
               )}
               {visibleColumns.has("timesAttended") && (
                 <TableCell className="text-center">{member.timesAttended}</TableCell>
+              )}
+              {visibleColumns.has("dateOfBirth") && (
+                <TableCell className="text-sm">
+                  {member.dateOfBirth ? new Date(member.dateOfBirth).toLocaleDateString() : "-"}
+                </TableCell>
+              )}
+              {visibleColumns.has("followUpWorker") && (
+                <TableCell className="text-sm">{member.followUpWorker || "-"}</TableCell>
+              )}
+              {visibleColumns.has("archive") && (
+                <TableCell className="text-sm">{member.archive || "-"}</TableCell>
               )}
               {visibleColumns.has("actions") && (
                 <TableCell className="text-right space-x-2">

@@ -2,30 +2,49 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 
+export const ALL_MEMBER_COLUMNS = [
+  { id: "name", label: "Name" },
+  { id: "gender", label: "Gender" },
+  { id: "phone", label: "Phone" },
+  { id: "email", label: "Email" },
+  { id: "address", label: "Address" },
+  { id: "occupation", label: "Occupation" },
+  { id: "cluster", label: "Cluster" },
+  { id: "cell", label: "Cell" },
+  { id: "status", label: "Status" },
+  { id: "joinDate", label: "Join Date" },
+  { id: "lastAttended", label: "Last Attended" },
+  { id: "timesAttended", label: "Times Attended" },
+  { id: "dateOfBirth", label: "Date of Birth" },
+  { id: "followUpWorker", label: "Follow Up Worker" },
+  { id: "archive", label: "Archive Status" },
+];
+
+export const DEFAULT_VISIBLE_COLUMNS = new Set([
+  "name",
+  "gender",
+  "phone",
+  "email",
+  "status",
+  "cluster",
+  "lastAttended",
+  "timesAttended",
+  "actions",
+]);
+
 interface ColumnVisibilityDialogProps {
   open: boolean;
   onClose: () => void;
+  visibleColumns: Set<string>;
+  onToggleColumn: (columnId: string) => void;
 }
 
-export function ColumnVisibilityDialog({ open, onClose }: ColumnVisibilityDialogProps) {
-  const columns = [
-    { id: "name", label: "Name", checked: true },
-    { id: "gender", label: "Gender", checked: true },
-    { id: "phone", label: "Phone", checked: true },
-    { id: "email", label: "Email", checked: true },
-    { id: "address", label: "Address", checked: false },
-    { id: "occupation", label: "Occupation", checked: false },
-    { id: "cluster", label: "Cluster", checked: true },
-    { id: "cell", label: "Cell", checked: false },
-    { id: "status", label: "Status", checked: true },
-    { id: "joinDate", label: "Join Date", checked: false },
-    { id: "lastAttended", label: "Last Attended", checked: true },
-    { id: "timesAttended", label: "Times Attended", checked: true },
-    { id: "dateOfBirth", label: "Date of Birth", checked: false },
-    { id: "followUpWorker", label: "Follow Up Worker", checked: false },
-    { id: "archive", label: "Archive Status", checked: false },
-  ];
-
+export function ColumnVisibilityDialog({ 
+  open, 
+  onClose, 
+  visibleColumns, 
+  onToggleColumn 
+}: ColumnVisibilityDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent>
@@ -37,11 +56,12 @@ export function ColumnVisibilityDialog({ open, onClose }: ColumnVisibilityDialog
             Select which columns to display in the members table.
           </p>
           <div className="grid grid-cols-2 gap-4">
-            {columns.map((column) => (
+            {ALL_MEMBER_COLUMNS.map((column) => (
               <div key={column.id} className="flex items-center space-x-2">
                 <Checkbox
                   id={column.id}
-                  defaultChecked={column.checked}
+                  checked={visibleColumns.has(column.id)}
+                  onCheckedChange={() => onToggleColumn(column.id)}
                   data-testid={`checkbox-column-${column.id}`}
                 />
                 <Label htmlFor={column.id} className="cursor-pointer font-normal">

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Plus, Download, Upload, Filter, Columns, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { MemberTable } from "@/components/member-table";
 import { MemberDialog } from "@/components/member-dialog";
 import { ImportDialog } from "@/components/import-dialog";
-import { ColumnVisibilityDialog } from "@/components/column-visibility-dialog";
+import { ColumnVisibilityDialog, DEFAULT_VISIBLE_COLUMNS } from "@/components/column-visibility-dialog";
 import { MemberFilters } from "@/components/member-filters";
 import type { MemberWithAttendanceStats } from "@shared/schema";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -18,12 +18,27 @@ export default function Members() {
   const [showFilters, setShowFilters] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedMember, setSelectedMember] = useState<MemberWithAttendanceStats | null>(null);
+  const [visibleColumns, setVisibleColumns] = useState<Set<string>>(
+    () => new Set(DEFAULT_VISIBLE_COLUMNS)
+  );
   const [filters, setFilters] = useState({
     status: "",
     gender: "",
     occupation: "",
     cluster: "",
   });
+
+  const handleToggleColumn = useCallback((columnId: string) => {
+    setVisibleColumns((prev) => {
+      const next = new Set(prev);
+      if (next.has(columnId)) {
+        next.delete(columnId);
+      } else {
+        next.add(columnId);
+      }
+      return next;
+    });
+  }, []);
 
   const { data: allMembers, isLoading } = useQuery<MemberWithAttendanceStats[]>({
     queryKey: [
@@ -163,7 +178,7 @@ export default function Members() {
           <Skeleton className="h-96 w-full" />
         </div>
       ) : (
-        <MemberTable members={members || []} onEdit={handleEdit} />
+        <MemberTable members={members || []} onEdit={handleEdit} visibleColumns={visibleColumns} />
       )}
 
       {showMemberDialog && (
@@ -186,6 +201,8 @@ export default function Members() {
         <ColumnVisibilityDialog
           open={showColumnDialog}
           onClose={() => setShowColumnDialog(false)}
+          visibleColumns={visibleColumns}
+          onToggleColumn={handleToggleColumn}
         />
       )}
     </div>
