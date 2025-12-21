@@ -1,7 +1,7 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation } from "@tanstack/react-query";
-import { insertMemberSchema, type InsertMember, type MemberWithAttendanceStats } from "@shared/schema";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { insertMemberSchema, type InsertMember, type MemberWithAttendanceStats, type Cell } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -38,6 +38,10 @@ interface MemberDialogProps {
 export function MemberDialog({ member, open, onClose }: MemberDialogProps) {
   const { toast } = useToast();
   const isEdit = !!member;
+
+  const { data: cells } = useQuery<Cell[]>({
+    queryKey: ["/api/cells"],
+  });
 
   const form = useForm<InsertMember>({
     resolver: zodResolver(insertMemberSchema),
@@ -292,9 +296,21 @@ export function MemberDialog({ member, open, onClose }: MemberDialogProps) {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Cell</FormLabel>
-                    <FormControl>
-                      <Input {...field} data-testid="input-cell" />
-                    </FormControl>
+                    <Select onValueChange={(val) => field.onChange(val === "none" ? "" : val)} value={field.value || ""}>
+                      <FormControl>
+                        <SelectTrigger data-testid="select-cell">
+                          <SelectValue placeholder="Select cell (optional)" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="none">No Cell</SelectItem>
+                        {cells?.map((cell) => (
+                          <SelectItem key={cell.id} value={cell.name}>
+                            {cell.name} ({cell.cluster})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     <FormMessage />
                   </FormItem>
                 )}

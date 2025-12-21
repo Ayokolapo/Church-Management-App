@@ -1,4 +1,4 @@
-import { Users, UserPlus, CalendarCheck, Home, MessageSquare, ClipboardList } from "lucide-react";
+import { Users, UserPlus, CalendarCheck, Home, MessageSquare, ClipboardList, Network } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import {
   Sidebar,
@@ -31,6 +31,11 @@ const menuItems = [
     title: "Attendance",
     url: "/attendance",
     icon: CalendarCheck,
+  },
+  {
+    title: "Cells",
+    url: "/cells",
+    icon: Network,
   },
   {
     title: "Follow-up Tasks",
