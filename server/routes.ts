@@ -91,51 +91,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/members/:id", async (req, res) => {
-    try {
-      const member = await storage.getMemberById(req.params.id);
-      if (!member) {
-        return res.status(404).json({ error: "Member not found" });
-      }
-      res.json(member);
-    } catch (error) {
-      console.error("Error fetching member:", error);
-      res.status(500).json({ error: "Failed to fetch member" });
-    }
-  });
-
-  app.post("/api/members", async (req, res) => {
-    try {
-      const validatedData = insertMemberSchema.parse(req.body);
-      const member = await storage.createMember(validatedData);
-      res.json(member);
-    } catch (error: any) {
-      console.error("Error creating member:", error);
-      res.status(400).json({ error: error.message || "Failed to create member" });
-    }
-  });
-
-  app.patch("/api/members/:id", async (req, res) => {
-    try {
-      const validatedData = insertMemberSchema.partial().parse(req.body);
-      const member = await storage.updateMember(req.params.id, validatedData);
-      res.json(member);
-    } catch (error: any) {
-      console.error("Error updating member:", error);
-      res.status(400).json({ error: error.message || "Failed to update member" });
-    }
-  });
-
-  app.delete("/api/members/:id", async (req, res) => {
-    try {
-      await storage.deleteMember(req.params.id);
-      res.json({ success: true });
-    } catch (error) {
-      console.error("Error deleting member:", error);
-      res.status(500).json({ error: "Failed to delete member" });
-    }
-  });
-
+  // CSV routes must come before :id route to prevent "export", "template", "import" from being matched as IDs
   app.get("/api/members/export", async (req, res) => {
     try {
       const members = await storage.getMembers();
@@ -240,15 +196,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const validatedData = insertMemberSchema.parse(memberData);
           await storage.createMember(validatedData);
           imported++;
-        } catch (error) {
-          console.error("Error importing member:", error);
+        } catch (err) {
+          console.error("Error importing member record:", err);
         }
       }
 
-      res.json({ success: true, imported });
+      res.json({ imported, total: records.length });
     } catch (error) {
       console.error("Error importing members:", error);
       res.status(500).json({ error: "Failed to import members" });
+    }
+  });
+
+  // Parameterized routes must come after specific routes
+  app.get("/api/members/:id", async (req, res) => {
+    try {
+      const member = await storage.getMemberById(req.params.id);
+      if (!member) {
+        return res.status(404).json({ error: "Member not found" });
+      }
+      res.json(member);
+    } catch (error) {
+      console.error("Error fetching member:", error);
+      res.status(500).json({ error: "Failed to fetch member" });
+    }
+  });
+
+  app.post("/api/members", async (req, res) => {
+    try {
+      const validatedData = insertMemberSchema.parse(req.body);
+      const member = await storage.createMember(validatedData);
+      res.json(member);
+    } catch (error: any) {
+      console.error("Error creating member:", error);
+      res.status(400).json({ error: error.message || "Failed to create member" });
+    }
+  });
+
+  app.patch("/api/members/:id", async (req, res) => {
+    try {
+      const validatedData = insertMemberSchema.partial().parse(req.body);
+      const member = await storage.updateMember(req.params.id, validatedData);
+      res.json(member);
+    } catch (error: any) {
+      console.error("Error updating member:", error);
+      res.status(400).json({ error: error.message || "Failed to update member" });
+    }
+  });
+
+  app.delete("/api/members/:id", async (req, res) => {
+    try {
+      await storage.deleteMember(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting member:", error);
+      res.status(500).json({ error: "Failed to delete member" });
     }
   });
 
