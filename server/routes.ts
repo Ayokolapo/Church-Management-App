@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertMemberSchema, insertFirstTimerSchema, insertAttendanceSchema, insertCommunicationSchema, insertFollowUpTaskSchema } from "@shared/schema";
+import { insertMemberSchema, insertFirstTimerSchema, insertAttendanceSchema, insertCommunicationSchema, insertFollowUpTaskSchema, insertCellSchema, insertCellAttendanceSchema } from "@shared/schema";
 import multer from "multer";
 import { parse } from "csv-parse/sync";
 import { stringify } from "csv-stringify/sync";
@@ -172,7 +172,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       let imported = 0;
-      for (const record of records) {
+      for (const record of records as Record<string, string>[]) {
         try {
           const memberData = {
             firstName: record["First Name"] || record.firstName,
@@ -366,7 +366,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       let imported = 0;
-      for (const record of records) {
+      for (const record of records as Record<string, string>[]) {
         try {
           const enjoyedArray = (record["Enjoyed About Service"] || record.enjoyedAboutService || "")
             .split(",")
@@ -486,7 +486,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       let imported = 0;
-      for (const record of records) {
+      for (const record of records as Record<string, string>[]) {
         try {
           const firstName = record["First Name"] || record.firstName;
           const lastName = record["Last Name"] || record.lastName;
@@ -587,6 +587,109 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error completing follow-up task:", error);
       res.status(500).json({ error: "Failed to complete follow-up task" });
+    }
+  });
+
+  // Cell routes
+  app.get("/api/cells", async (req, res) => {
+    try {
+      const cluster = req.query.cluster as string | undefined;
+      const cells = await storage.getCells(cluster);
+      res.json(cells);
+    } catch (error) {
+      console.error("Error fetching cells:", error);
+      res.status(500).json({ error: "Failed to fetch cells" });
+    }
+  });
+
+  app.get("/api/cells/:id", async (req, res) => {
+    try {
+      const cell = await storage.getCellById(req.params.id);
+      if (!cell) {
+        return res.status(404).json({ error: "Cell not found" });
+      }
+      res.json(cell);
+    } catch (error) {
+      console.error("Error fetching cell:", error);
+      res.status(500).json({ error: "Failed to fetch cell" });
+    }
+  });
+
+  app.post("/api/cells", async (req, res) => {
+    try {
+      const validatedData = insertCellSchema.parse(req.body);
+      const cell = await storage.createCell(validatedData);
+      res.json(cell);
+    } catch (error: any) {
+      console.error("Error creating cell:", error);
+      res.status(400).json({ error: error.message || "Failed to create cell" });
+    }
+  });
+
+  app.patch("/api/cells/:id", async (req, res) => {
+    try {
+      const validatedData = insertCellSchema.partial().parse(req.body);
+      const cell = await storage.updateCell(req.params.id, validatedData);
+      res.json(cell);
+    } catch (error: any) {
+      console.error("Error updating cell:", error);
+      res.status(400).json({ error: error.message || "Failed to update cell" });
+    }
+  });
+
+  app.delete("/api/cells/:id", async (req, res) => {
+    try {
+      await storage.deleteCell(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting cell:", error);
+      res.status(500).json({ error: "Failed to delete cell" });
+    }
+  });
+
+  // Cell attendance routes
+  app.get("/api/cells/:id/attendance", async (req, res) => {
+    try {
+      const meetingDate = req.query.meetingDate as string | undefined;
+      const attendance = await storage.getCellAttendance(req.params.id, meetingDate);
+      res.json(attendance);
+    } catch (error) {
+      console.error("Error fetching cell attendance:", error);
+      res.status(500).json({ error: "Failed to fetch cell attendance" });
+    }
+  });
+
+  app.post("/api/cells/:id/attendance", async (req, res) => {
+    try {
+      const validatedData = insertCellAttendanceSchema.parse({
+        ...req.body,
+        cellId: req.params.id,
+      });
+      const record = await storage.recordCellAttendance(validatedData);
+      res.json(record);
+    } catch (error: any) {
+      console.error("Error recording cell attendance:", error);
+      res.status(400).json({ error: error.message || "Failed to record cell attendance" });
+    }
+  });
+
+  app.get("/api/cells/:id/meeting-dates", async (req, res) => {
+    try {
+      const dates = await storage.getCellMeetingDates(req.params.id);
+      res.json(dates);
+    } catch (error) {
+      console.error("Error fetching meeting dates:", error);
+      res.status(500).json({ error: "Failed to fetch meeting dates" });
+    }
+  });
+
+  app.delete("/api/cell-attendance/:id", async (req, res) => {
+    try {
+      await storage.deleteCellAttendance(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting cell attendance:", error);
+      res.status(500).json({ error: "Failed to delete cell attendance" });
     }
   });
 
