@@ -296,7 +296,7 @@ export function MemberDialog({ member, open, onClose }: MemberDialogProps) {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Cell</FormLabel>
-                    <Select onValueChange={(val) => field.onChange(val === "none" ? "" : val)} value={field.value || ""}>
+                    <Select onValueChange={(val) => field.onChange(val === "none" ? "" : val)} value={field.value || "none"}>
                       <FormControl>
                         <SelectTrigger data-testid="select-cell">
                           <SelectValue placeholder="Select cell (optional)" />
@@ -304,7 +304,7 @@ export function MemberDialog({ member, open, onClose }: MemberDialogProps) {
                       </FormControl>
                       <SelectContent>
                         <SelectItem value="none">No Cell</SelectItem>
-                        {cells?.map((cell) => (
+                        {cells?.filter((cell) => cell.name).map((cell) => (
                           <SelectItem key={cell.id} value={cell.name}>
                             {cell.name} ({cell.cluster})
                           </SelectItem>
