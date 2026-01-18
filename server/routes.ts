@@ -5,10 +5,14 @@ import { insertMemberSchema, insertFirstTimerSchema, insertAttendanceSchema, ins
 import multer from "multer";
 import { parse } from "csv-parse/sync";
 import { stringify } from "csv-stringify/sync";
+import { setupAuth, registerAuthRoutes } from "./replit_integrations/auth";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Setup authentication (must be before other routes)
+  await setupAuth(app);
+  registerAuthRoutes(app);
   // Stats endpoint
   app.get("/api/stats", async (req, res) => {
     try {

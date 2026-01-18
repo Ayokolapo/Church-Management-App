@@ -3,6 +3,9 @@ import { pgTable, text, varchar, timestamp, date, integer } from "drizzle-orm/pg
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
+// Export auth schema
+export * from "./models/auth";
+
 export const members = pgTable("members", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   firstName: text("first_name").notNull(),
