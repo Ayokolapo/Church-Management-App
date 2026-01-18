@@ -167,9 +167,14 @@ export function AppSidebar() {
             </Button>
           </div>
         ) : (
-          <Button asChild className="w-full" data-testid="button-login">
-            <a href="/api/login">Log In</a>
-          </Button>
+          <div className="flex flex-col gap-2">
+            <Button asChild className="w-full" data-testid="button-login">
+              <a href="/api/login">Log In</a>
+            </Button>
+            <Button asChild variant="outline" className="w-full" data-testid="button-signup">
+              <Link href="/signup">Sign Up</Link>
+            </Button>
+          </div>
         )}
       </SidebarFooter>
     </Sidebar>

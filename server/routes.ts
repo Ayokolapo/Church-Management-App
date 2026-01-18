@@ -19,14 +19,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const validatedData = signupSchema.parse(req.body);
       
+      // Normalize email to lowercase
+      const normalizedEmail = validatedData.email.toLowerCase().trim();
+      
       // Check if email already exists
-      const existingUser = await storage.getUserByEmail(validatedData.email);
+      const existingUser = await storage.getUserByEmail(normalizedEmail);
       if (existingUser) {
         return res.status(400).json({ error: "An account with this email already exists" });
       }
       
-      // Create user with signup data
-      const user = await storage.createSignupUser(validatedData);
+      // Create user with signup data (normalized email)
+      const user = await storage.createSignupUser({
+        ...validatedData,
+        email: normalizedEmail,
+      });
       res.status(201).json({ message: "Registration successful", user });
     } catch (error: any) {
       console.error("Error during signup:", error);

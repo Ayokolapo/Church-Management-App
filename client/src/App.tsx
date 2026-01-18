@@ -15,6 +15,7 @@ import FollowUpTasks from "@/pages/follow-up-tasks";
 import FirstTimerForm from "@/pages/first-timer-form";
 import Branches from "@/pages/branches";
 import Users from "@/pages/users";
+import Signup from "@/pages/signup";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -45,6 +46,9 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <Switch>
+          <Route path="/signup">
+            <Signup />
+          </Route>
           <Route path="/first-timer-form">
             <FirstTimerForm />
           </Route>
