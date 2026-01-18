@@ -28,7 +28,7 @@ type BranchFormData = z.infer<typeof branchFormSchema>;
 
 export default function Branches() {
   const { toast } = useToast();
-  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const { isAuthenticated, isLoading: authLoading, hasAdminAccess, isRoleLoading } = useAuth();
   const [showDialog, setShowDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [selectedBranch, setSelectedBranch] = useState<Branch | null>(null);
@@ -188,10 +188,12 @@ export default function Branches() {
           <h1 className="text-2xl font-bold">Branch Management</h1>
           <p className="text-muted-foreground">Manage your church branches and locations</p>
         </div>
-        <Button onClick={() => setShowDialog(true)} data-testid="button-add-branch">
-          <Plus className="w-4 h-4 mr-2" />
-          Add Branch
-        </Button>
+        {hasAdminAccess && (
+          <Button onClick={() => setShowDialog(true)} data-testid="button-add-branch">
+            <Plus className="w-4 h-4 mr-2" />
+            Add Branch
+          </Button>
+        )}
       </div>
 
       {branches?.length === 0 ? (
@@ -202,10 +204,12 @@ export default function Branches() {
             <p className="text-muted-foreground text-center mb-4">
               Get started by adding your first church branch
             </p>
-            <Button onClick={() => setShowDialog(true)} data-testid="button-add-first-branch">
-              <Plus className="w-4 h-4 mr-2" />
-              Add First Branch
-            </Button>
+            {hasAdminAccess && (
+              <Button onClick={() => setShowDialog(true)} data-testid="button-add-first-branch">
+                <Plus className="w-4 h-4 mr-2" />
+                Add First Branch
+              </Button>
+            )}
           </CardContent>
         </Card>
       ) : (
@@ -217,24 +221,26 @@ export default function Branches() {
                   <Building2 className="w-5 h-5 text-muted-foreground" />
                   <CardTitle className="text-lg">{branch.name}</CardTitle>
                 </div>
-                <div className="flex gap-1">
-                  <Button 
-                    variant="ghost" 
-                    size="icon"
-                    onClick={() => handleEdit(branch)}
-                    data-testid={`button-edit-branch-${branch.id}`}
-                  >
-                    <Edit className="w-4 h-4" />
-                  </Button>
-                  <Button 
-                    variant="ghost" 
-                    size="icon"
-                    onClick={() => handleDelete(branch)}
-                    data-testid={`button-delete-branch-${branch.id}`}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
-                </div>
+                {hasAdminAccess && (
+                  <div className="flex gap-1">
+                    <Button 
+                      variant="ghost" 
+                      size="icon"
+                      onClick={() => handleEdit(branch)}
+                      data-testid={`button-edit-branch-${branch.id}`}
+                    >
+                      <Edit className="w-4 h-4" />
+                    </Button>
+                    <Button 
+                      variant="ghost" 
+                      size="icon"
+                      onClick={() => handleDelete(branch)}
+                      data-testid={`button-delete-branch-${branch.id}`}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                )}
               </CardHeader>
               <CardContent className="space-y-2">
                 {branch.city && (

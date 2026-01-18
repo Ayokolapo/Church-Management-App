@@ -7,6 +7,9 @@ import type { Express, RequestHandler } from "express";
 import memoize from "memoizee";
 import connectPg from "connect-pg-simple";
 import { authStorage } from "./storage";
+import { storage } from "../../storage";
+
+type UserRoleType = "super_admin" | "branch_admin" | "group_admin" | "cell_leader" | "branch_rep";
 
 const getOidcConfig = memoize(
   async () => {
@@ -157,4 +160,31 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
     res.status(401).json({ message: "Unauthorized" });
     return;
   }
+};
+
+export const requireRole = (...allowedRoles: UserRoleType[]): RequestHandler => {
+  return async (req, res, next) => {
+    const user = req.user as any;
+
+    if (!req.isAuthenticated() || !user?.claims?.sub) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+      const userRole = await storage.getUserRole(user.claims.sub);
+      
+      if (!userRole) {
+        return res.status(403).json({ message: "Forbidden: No role assigned" });
+      }
+
+      if (!allowedRoles.includes(userRole.role as UserRoleType)) {
+        return res.status(403).json({ message: "Forbidden: Insufficient permissions" });
+      }
+
+      return next();
+    } catch (error) {
+      console.error("Error checking user role:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  };
 };

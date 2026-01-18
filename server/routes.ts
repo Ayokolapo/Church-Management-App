@@ -5,7 +5,7 @@ import { insertMemberSchema, insertFirstTimerSchema, insertAttendanceSchema, ins
 import multer from "multer";
 import { parse } from "csv-parse/sync";
 import { stringify } from "csv-stringify/sync";
-import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integrations/auth";
+import { setupAuth, registerAuthRoutes, isAuthenticated, requireRole } from "./replit_integrations/auth";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -697,7 +697,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Branch routes (protected - requires authentication)
+  // Branch routes (protected - requires authentication, mutations require super_admin)
   app.get("/api/branches", isAuthenticated, async (req, res) => {
     try {
       const branches = await storage.getBranches();
@@ -721,7 +721,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/branches", isAuthenticated, async (req, res) => {
+  app.post("/api/branches", isAuthenticated, requireRole("super_admin"), async (req, res) => {
     try {
       const validatedData = insertBranchSchema.parse(req.body);
       const branch = await storage.createBranch(validatedData);
@@ -732,7 +732,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/branches/:id", isAuthenticated, async (req, res) => {
+  app.patch("/api/branches/:id", isAuthenticated, requireRole("super_admin"), async (req, res) => {
     try {
       const validatedData = insertBranchSchema.partial().parse(req.body);
       const branch = await storage.updateBranch(req.params.id, validatedData);
@@ -743,7 +743,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/branches/:id", isAuthenticated, async (req, res) => {
+  app.delete("/api/branches/:id", isAuthenticated, requireRole("super_admin"), async (req, res) => {
     try {
       await storage.deleteBranch(req.params.id);
       res.json({ success: true });
@@ -753,7 +753,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // User management routes (protected - requires authentication)
+  // User management routes (protected - requires authentication, mutations require super_admin)
   app.get("/api/users", isAuthenticated, async (req, res) => {
     try {
       const users = await storage.getAllUsers();
@@ -787,7 +787,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/user-roles", isAuthenticated, async (req, res) => {
+  app.post("/api/user-roles", isAuthenticated, requireRole("super_admin"), async (req, res) => {
     try {
       const validatedData = insertUserRoleSchema.parse(req.body);
       const role = await storage.assignUserRole(validatedData);
@@ -798,7 +798,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/user-roles/:id", isAuthenticated, async (req, res) => {
+  app.patch("/api/user-roles/:id", isAuthenticated, requireRole("super_admin"), async (req, res) => {
     try {
       const validatedData = insertUserRoleSchema.partial().parse(req.body);
       const role = await storage.updateUserRole(req.params.id, validatedData);
@@ -809,7 +809,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/user-roles/:id", isAuthenticated, async (req, res) => {
+  app.delete("/api/user-roles/:id", isAuthenticated, requireRole("super_admin"), async (req, res) => {
     try {
       await storage.deleteUserRole(req.params.id);
       res.json({ success: true });

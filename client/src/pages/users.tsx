@@ -45,7 +45,7 @@ type RoleFormData = z.infer<typeof roleFormSchema>;
 
 export default function Users() {
   const { toast } = useToast();
-  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const { isAuthenticated, isLoading: authLoading, hasAdminAccess, isRoleLoading } = useAuth();
   const [showRoleDialog, setShowRoleDialog] = useState(false);
   const [showRemoveDialog, setShowRemoveDialog] = useState(false);
   const [selectedUser, setSelectedUser] = useState<UserWithRole | null>(null);
@@ -269,28 +269,30 @@ export default function Users() {
                     No role assigned
                   </Badge>
                 )}
-                <div className="flex gap-2 pt-2">
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={() => handleEditRole(user)}
-                    data-testid={`button-edit-role-${user.id}`}
-                  >
-                    <Edit className="w-4 h-4 mr-1" />
-                    {user.role ? "Edit Role" : "Assign Role"}
-                  </Button>
-                  {user.role && (
+                {hasAdminAccess && (
+                  <div className="flex gap-2 pt-2">
                     <Button 
                       variant="outline" 
                       size="sm"
-                      onClick={() => handleRemoveRole(user)}
-                      data-testid={`button-remove-role-${user.id}`}
+                      onClick={() => handleEditRole(user)}
+                      data-testid={`button-edit-role-${user.id}`}
                     >
-                      <Trash2 className="w-4 h-4 mr-1" />
-                      Remove
+                      <Edit className="w-4 h-4 mr-1" />
+                      {user.role ? "Edit Role" : "Assign Role"}
                     </Button>
-                  )}
-                </div>
+                    {user.role && (
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => handleRemoveRole(user)}
+                        data-testid={`button-remove-role-${user.id}`}
+                      >
+                        <Trash2 className="w-4 h-4 mr-1" />
+                        Remove
+                      </Button>
+                    )}
+                  </div>
+                )}
               </CardContent>
             </Card>
           ))}
