@@ -99,6 +99,37 @@ export const cellAttendance = pgTable("cell_attendance", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// Branches table - for different church locations
+export const branches = pgTable("branches", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  address: text("address"),
+  city: text("city"),
+  description: text("description"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// User roles enum values
+// super_admin: Senior Pastor & Global Head - full access to everything
+// branch_admin: Resident Pastors - view all data for their branch
+// group_admin: Cell Group/Cluster Leads - manage cell leaders, view assigned cells
+// cell_leader: Cell Leaders - basic user, manage their cell only
+// branch_rep: Branch Representatives - view/edit branch data, no role management
+export const userRoleEnum = ['super_admin', 'branch_admin', 'group_admin', 'cell_leader', 'branch_rep'] as const;
+
+// User roles table - assigns roles to users with optional branch/cell scope
+export const userRoles = pgTable("user_roles", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  role: text("role").notNull(), // one of userRoleEnum values
+  branchId: varchar("branch_id").references(() => branches.id, { onDelete: 'cascade' }),
+  clusterId: text("cluster_id"), // for group_admin - which cluster they manage
+  cellId: varchar("cell_id").references(() => cells.id, { onDelete: 'cascade' }), // for cell_leader
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 export const insertMemberSchema = createInsertSchema(members, {
   email: z.string().email().optional().or(z.literal('')),
   mobilePhone: z.string().min(1, "Mobile phone is required"),
@@ -179,6 +210,29 @@ export const insertCellAttendanceSchema = createInsertSchema(cellAttendance, {
   createdAt: true,
 });
 
+export const insertBranchSchema = createInsertSchema(branches, {
+  name: z.string().min(1, "Branch name is required"),
+  address: z.string().optional(),
+  city: z.string().optional(),
+  description: z.string().optional(),
+}).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertUserRoleSchema = createInsertSchema(userRoles, {
+  userId: z.string().min(1, "User is required"),
+  role: z.enum(userRoleEnum),
+  branchId: z.string().optional(),
+  clusterId: z.string().optional(),
+  cellId: z.string().optional(),
+}).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export type Member = typeof members.$inferSelect;
 export type InsertMember = z.infer<typeof insertMemberSchema>;
 export type FirstTimer = typeof firstTimers.$inferSelect;
@@ -212,4 +266,21 @@ export type CellWithMembers = Cell & {
 
 export type CellAttendanceWithMember = CellAttendance & {
   member: Member;
+};
+
+export type Branch = typeof branches.$inferSelect;
+export type InsertBranch = z.infer<typeof insertBranchSchema>;
+export type UserRole = typeof userRoles.$inferSelect;
+export type InsertUserRole = z.infer<typeof insertUserRoleSchema>;
+export type UserRoleType = typeof userRoleEnum[number];
+
+// User with role information
+export type UserWithRole = {
+  id: string;
+  email: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  profileImageUrl: string | null;
+  role: UserRole | null;
+  branch: Branch | null;
 };

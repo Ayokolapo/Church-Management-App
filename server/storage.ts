@@ -6,6 +6,9 @@ import {
   followUpTasks,
   cells,
   cellAttendance,
+  branches,
+  userRoles,
+  users,
   type Member,
   type InsertMember,
   type FirstTimer,
@@ -24,6 +27,12 @@ import {
   type InsertCellAttendance,
   type CellWithMembers,
   type CellAttendanceWithMember,
+  type Branch,
+  type InsertBranch,
+  type UserRole,
+  type InsertUserRole,
+  type UserWithRole,
+  type User,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, sql, desc } from "drizzle-orm";
@@ -87,6 +96,21 @@ export interface IStorage {
   recordCellAttendance(data: InsertCellAttendance): Promise<CellAttendance>;
   deleteCellAttendance(id: string): Promise<void>;
   getCellMeetingDates(cellId: string): Promise<string[]>;
+  
+  // Branches
+  getBranches(): Promise<Branch[]>;
+  getBranchById(id: string): Promise<Branch | undefined>;
+  createBranch(branch: InsertBranch): Promise<Branch>;
+  updateBranch(id: string, branch: Partial<InsertBranch>): Promise<Branch>;
+  deleteBranch(id: string): Promise<void>;
+  
+  // User Roles
+  getAllUsers(): Promise<UserWithRole[]>;
+  getUserWithRole(userId: string): Promise<UserWithRole | undefined>;
+  getUserRole(userId: string): Promise<UserRole | undefined>;
+  assignUserRole(data: InsertUserRole): Promise<UserRole>;
+  updateUserRole(id: string, data: Partial<InsertUserRole>): Promise<UserRole>;
+  deleteUserRole(id: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -643,6 +667,112 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(cellAttendance.meetingDate));
     
     return dates.map(d => d.date);
+  }
+
+  // Branch methods
+  async getBranches(): Promise<Branch[]> {
+    return await db.select().from(branches).orderBy(branches.name);
+  }
+
+  async getBranchById(id: string): Promise<Branch | undefined> {
+    const [branch] = await db.select().from(branches).where(eq(branches.id, id));
+    return branch || undefined;
+  }
+
+  async createBranch(branch: InsertBranch): Promise<Branch> {
+    const [newBranch] = await db.insert(branches).values(branch).returning();
+    return newBranch;
+  }
+
+  async updateBranch(id: string, branch: Partial<InsertBranch>): Promise<Branch> {
+    const [updated] = await db
+      .update(branches)
+      .set({ ...branch, updatedAt: new Date() })
+      .where(eq(branches.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteBranch(id: string): Promise<void> {
+    await db.delete(branches).where(eq(branches.id, id));
+  }
+
+  // User Role methods
+  async getAllUsers(): Promise<UserWithRole[]> {
+    const allUsers = await db.select().from(users).orderBy(users.firstName, users.lastName);
+    
+    const usersWithRoles: UserWithRole[] = await Promise.all(
+      allUsers.map(async (user) => {
+        const [role] = await db.select().from(userRoles).where(eq(userRoles.userId, user.id));
+        let branch: Branch | null = null;
+        if (role?.branchId) {
+          const [b] = await db.select().from(branches).where(eq(branches.id, role.branchId));
+          branch = b || null;
+        }
+        return {
+          id: user.id,
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          profileImageUrl: user.profileImageUrl,
+          role: role || null,
+          branch,
+        };
+      })
+    );
+    
+    return usersWithRoles;
+  }
+
+  async getUserWithRole(userId: string): Promise<UserWithRole | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.id, userId));
+    if (!user) return undefined;
+    
+    const [role] = await db.select().from(userRoles).where(eq(userRoles.userId, userId));
+    let branch: Branch | null = null;
+    if (role?.branchId) {
+      const [b] = await db.select().from(branches).where(eq(branches.id, role.branchId));
+      branch = b || null;
+    }
+    
+    return {
+      id: user.id,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      profileImageUrl: user.profileImageUrl,
+      role: role || null,
+      branch,
+    };
+  }
+
+  async getUserRole(userId: string): Promise<UserRole | undefined> {
+    const [role] = await db.select().from(userRoles).where(eq(userRoles.userId, userId));
+    return role || undefined;
+  }
+
+  async assignUserRole(data: InsertUserRole): Promise<UserRole> {
+    // Check if user already has a role, if so update it
+    const existing = await this.getUserRole(data.userId);
+    if (existing) {
+      return this.updateUserRole(existing.id, data);
+    }
+    
+    const [role] = await db.insert(userRoles).values(data).returning();
+    return role;
+  }
+
+  async updateUserRole(id: string, data: Partial<InsertUserRole>): Promise<UserRole> {
+    const [updated] = await db
+      .update(userRoles)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(userRoles.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteUserRole(id: string): Promise<void> {
+    await db.delete(userRoles).where(eq(userRoles.id, id));
   }
 }
 

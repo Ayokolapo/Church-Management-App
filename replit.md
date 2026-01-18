@@ -67,7 +67,9 @@ Preferred communication style: Simple, everyday language.
 - Schema-first approach with migrations stored in /migrations directory
 
 **Schema Design**
-- Three main tables: members, firstTimers, attendance
+- Core tables: members, firstTimers, attendance, cells, cellAttendance
+- Authentication tables: users, sessions
+- Admin tables: branches, userRoles
 - UUID primary keys generated via PostgreSQL's gen_random_uuid()
 - Timestamp columns for created_at/updated_at tracking
 - Foreign key relationship: firstTimers.memberId references members when converted
@@ -83,14 +85,48 @@ Preferred communication style: Simple, everyday language.
 ### Authentication & Authorization
 
 **Current Implementation**
-- No authentication system currently implemented
-- Application assumes single-tenant usage within trusted network
-- Session management infrastructure present (connect-pg-simple) but not actively used
+- Replit Auth integration via OpenID Connect (OIDC)
+- Session management via PostgreSQL (connect-pg-simple)
+- Users stored in `users` table with profile information
+- Sessions stored in `sessions` table with automatic expiration
+
+**User Roles & Permissions System**
+The system supports a hierarchical role-based access control model:
+
+1. **Super Admin** (Senior Pastor & Global Head)
+   - Full access to all branches, users, and data
+   - Can add/remove any user and reassign roles
+   - View all attendance data, membership details, and analytics across all branches
+
+2. **Branch Admin** (Resident Pastors)
+   - Oversee all cells in their assigned church branch
+   - Can view attendance, membership details, and analytics for their branch
+   - Cannot modify user roles
+
+3. **Group Admin** (Cell Group/Cluster Leads)
+   - Manage Cell Leaders under their group
+   - Can add/remove Cell Leaders under their group
+   - Can view attendance and member details for assigned cells
+
+4. **Cell Leader** (Basic Users)
+   - Conduct weekly cell meetings and take attendance
+   - Can add/remove members in their cell
+   - Default view: Only their cell's data
+
+5. **Branch Representative**
+   - View attendance, membership details, and analytics for their branch
+   - Can edit attendance and membership details
+   - Cannot modify user roles
+
+**Key Tables**
+- `users` - User profiles from OIDC authentication
+- `sessions` - Active user sessions
+- `branches` - Church branch locations
+- `user_roles` - Role assignments with branch/cell scope
 
 **Security Considerations**
-- CORS not explicitly configured (assumes same-origin deployment)
-- No role-based access control
-- Future enhancement opportunity for multi-church or multi-user scenarios
+- Authenticated routes protected via `isAuthenticated` middleware
+- Role-based access control ready for implementation on routes
 
 ### External Dependencies
 

@@ -1,4 +1,4 @@
-import { Users, UserPlus, CalendarCheck, Home, MessageSquare, ClipboardList, Network } from "lucide-react";
+import { Users, UserPlus, CalendarCheck, Home, MessageSquare, ClipboardList, Network, Building2, UserCog, LogOut } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import {
   Sidebar,
@@ -9,9 +9,14 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarFooter,
+  SidebarSeparator,
 } from "@/components/ui/sidebar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
+import { useAuth } from "@/hooks/use-auth";
 
-const menuItems = [
+const mainMenuItems = [
   {
     title: "Dashboard",
     url: "/",
@@ -49,8 +54,37 @@ const menuItems = [
   },
 ];
 
+const adminMenuItems = [
+  {
+    title: "Branches",
+    url: "/branches",
+    icon: Building2,
+  },
+  {
+    title: "User Management",
+    url: "/users",
+    icon: UserCog,
+  },
+];
+
 export function AppSidebar() {
   const [location] = useLocation();
+  const { user, isAuthenticated, logout, isLoading } = useAuth();
+
+  const getInitials = () => {
+    if (!user) return "U";
+    const first = user.firstName?.charAt(0) || "";
+    const last = user.lastName?.charAt(0) || "";
+    return (first + last).toUpperCase() || user.email?.charAt(0)?.toUpperCase() || "U";
+  };
+
+  const getUserDisplayName = () => {
+    if (!user) return "Guest";
+    if (user.firstName && user.lastName) {
+      return `${user.firstName} ${user.lastName}`;
+    }
+    return user.email || "User";
+  };
 
   return (
     <Sidebar>
@@ -61,7 +95,7 @@ export function AppSidebar() {
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {menuItems.map((item) => (
+              {mainMenuItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild isActive={location === item.url}>
                     <Link href={item.url} data-testid={`link-${item.title.toLowerCase().replace(' ', '-')}`}>
@@ -74,7 +108,70 @@ export function AppSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        {isAuthenticated && (
+          <>
+            <SidebarSeparator />
+
+            <SidebarGroup>
+              <SidebarGroupLabel>Administration</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {adminMenuItems.map((item) => (
+                    <SidebarMenuItem key={item.title}>
+                      <SidebarMenuButton asChild isActive={location === item.url}>
+                        <Link href={item.url} data-testid={`link-${item.title.toLowerCase().replace(' ', '-')}`}>
+                          <item.icon className="w-4 h-4" />
+                          <span>{item.title}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          </>
+        )}
       </SidebarContent>
+
+      <SidebarFooter className="border-t p-4">
+        {isLoading ? (
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-muted animate-pulse" />
+            <div className="flex-1 space-y-1">
+              <div className="h-4 bg-muted rounded animate-pulse w-24" />
+              <div className="h-3 bg-muted rounded animate-pulse w-32" />
+            </div>
+          </div>
+        ) : isAuthenticated && user ? (
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-3 min-w-0">
+              <Avatar className="w-8 h-8">
+                <AvatarImage src={user.profileImageUrl || undefined} />
+                <AvatarFallback className="text-xs">{getInitials()}</AvatarFallback>
+              </Avatar>
+              <div className="min-w-0">
+                <p className="text-sm font-medium truncate">{getUserDisplayName()}</p>
+                {user.email && user.firstName && (
+                  <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+                )}
+              </div>
+            </div>
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              onClick={() => logout()}
+              data-testid="button-logout"
+            >
+              <LogOut className="w-4 h-4" />
+            </Button>
+          </div>
+        ) : (
+          <Button asChild className="w-full" data-testid="button-login">
+            <a href="/api/login">Log In</a>
+          </Button>
+        )}
+      </SidebarFooter>
     </Sidebar>
   );
 }

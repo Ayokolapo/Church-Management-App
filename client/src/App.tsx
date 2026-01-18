@@ -13,6 +13,8 @@ import Cells from "@/pages/cells";
 import Communications from "@/pages/communications";
 import FollowUpTasks from "@/pages/follow-up-tasks";
 import FirstTimerForm from "@/pages/first-timer-form";
+import Branches from "@/pages/branches";
+import Users from "@/pages/users";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -26,6 +28,8 @@ function Router() {
       <Route path="/communications" component={Communications} />
       <Route path="/follow-up-tasks" component={FollowUpTasks} />
       <Route path="/first-timer-form" component={FirstTimerForm} />
+      <Route path="/branches" component={Branches} />
+      <Route path="/users" component={Users} />
       <Route component={NotFound} />
     </Switch>
   );

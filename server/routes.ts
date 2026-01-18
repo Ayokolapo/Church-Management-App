@@ -1,11 +1,11 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertMemberSchema, insertFirstTimerSchema, insertAttendanceSchema, insertCommunicationSchema, insertFollowUpTaskSchema, insertCellSchema, insertCellAttendanceSchema } from "@shared/schema";
+import { insertMemberSchema, insertFirstTimerSchema, insertAttendanceSchema, insertCommunicationSchema, insertFollowUpTaskSchema, insertCellSchema, insertCellAttendanceSchema, insertBranchSchema, insertUserRoleSchema } from "@shared/schema";
 import multer from "multer";
 import { parse } from "csv-parse/sync";
 import { stringify } from "csv-stringify/sync";
-import { setupAuth, registerAuthRoutes } from "./replit_integrations/auth";
+import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integrations/auth";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -694,6 +694,139 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error deleting cell attendance:", error);
       res.status(500).json({ error: "Failed to delete cell attendance" });
+    }
+  });
+
+  // Branch routes (protected - requires authentication)
+  app.get("/api/branches", isAuthenticated, async (req, res) => {
+    try {
+      const branches = await storage.getBranches();
+      res.json(branches);
+    } catch (error) {
+      console.error("Error fetching branches:", error);
+      res.status(500).json({ error: "Failed to fetch branches" });
+    }
+  });
+
+  app.get("/api/branches/:id", isAuthenticated, async (req, res) => {
+    try {
+      const branch = await storage.getBranchById(req.params.id);
+      if (!branch) {
+        return res.status(404).json({ error: "Branch not found" });
+      }
+      res.json(branch);
+    } catch (error) {
+      console.error("Error fetching branch:", error);
+      res.status(500).json({ error: "Failed to fetch branch" });
+    }
+  });
+
+  app.post("/api/branches", isAuthenticated, async (req, res) => {
+    try {
+      const validatedData = insertBranchSchema.parse(req.body);
+      const branch = await storage.createBranch(validatedData);
+      res.json(branch);
+    } catch (error: any) {
+      console.error("Error creating branch:", error);
+      res.status(400).json({ error: error.message || "Failed to create branch" });
+    }
+  });
+
+  app.patch("/api/branches/:id", isAuthenticated, async (req, res) => {
+    try {
+      const validatedData = insertBranchSchema.partial().parse(req.body);
+      const branch = await storage.updateBranch(req.params.id, validatedData);
+      res.json(branch);
+    } catch (error: any) {
+      console.error("Error updating branch:", error);
+      res.status(400).json({ error: error.message || "Failed to update branch" });
+    }
+  });
+
+  app.delete("/api/branches/:id", isAuthenticated, async (req, res) => {
+    try {
+      await storage.deleteBranch(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting branch:", error);
+      res.status(500).json({ error: "Failed to delete branch" });
+    }
+  });
+
+  // User management routes (protected - requires authentication)
+  app.get("/api/users", isAuthenticated, async (req, res) => {
+    try {
+      const users = await storage.getAllUsers();
+      res.json(users);
+    } catch (error) {
+      console.error("Error fetching users:", error);
+      res.status(500).json({ error: "Failed to fetch users" });
+    }
+  });
+
+  app.get("/api/users/:id", isAuthenticated, async (req, res) => {
+    try {
+      const user = await storage.getUserWithRole(req.params.id);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      res.json(user);
+    } catch (error) {
+      console.error("Error fetching user:", error);
+      res.status(500).json({ error: "Failed to fetch user" });
+    }
+  });
+
+  app.get("/api/users/:id/role", isAuthenticated, async (req, res) => {
+    try {
+      const role = await storage.getUserRole(req.params.id);
+      res.json(role || null);
+    } catch (error) {
+      console.error("Error fetching user role:", error);
+      res.status(500).json({ error: "Failed to fetch user role" });
+    }
+  });
+
+  app.post("/api/user-roles", isAuthenticated, async (req, res) => {
+    try {
+      const validatedData = insertUserRoleSchema.parse(req.body);
+      const role = await storage.assignUserRole(validatedData);
+      res.json(role);
+    } catch (error: any) {
+      console.error("Error assigning user role:", error);
+      res.status(400).json({ error: error.message || "Failed to assign user role" });
+    }
+  });
+
+  app.patch("/api/user-roles/:id", isAuthenticated, async (req, res) => {
+    try {
+      const validatedData = insertUserRoleSchema.partial().parse(req.body);
+      const role = await storage.updateUserRole(req.params.id, validatedData);
+      res.json(role);
+    } catch (error: any) {
+      console.error("Error updating user role:", error);
+      res.status(400).json({ error: error.message || "Failed to update user role" });
+    }
+  });
+
+  app.delete("/api/user-roles/:id", isAuthenticated, async (req, res) => {
+    try {
+      await storage.deleteUserRole(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting user role:", error);
+      res.status(500).json({ error: "Failed to delete user role" });
+    }
+  });
+
+  // Get current user's role and permissions (protected)
+  app.get("/api/me/role", isAuthenticated, async (req: any, res) => {
+    try {
+      const userWithRole = await storage.getUserWithRole(req.user.claims.sub);
+      res.json(userWithRole || null);
+    } catch (error) {
+      console.error("Error fetching current user role:", error);
+      res.status(500).json({ error: "Failed to fetch current user role" });
     }
   });
 
