@@ -23,7 +23,8 @@ interface UserWithRoleResponse {
   email?: string;
   firstName?: string;
   lastName?: string;
-  role?: UserRole;
+  role?: UserRole | null;
+  branch?: { id: number; name: string; address?: string | null } | null;
 }
 
 async function fetchUserRole(): Promise<UserWithRoleResponse | null> {
