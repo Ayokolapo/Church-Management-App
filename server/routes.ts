@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertMemberSchema, insertFirstTimerSchema, insertAttendanceSchema, insertCommunicationSchema, insertFollowUpTaskSchema, insertCellSchema, insertCellAttendanceSchema, insertBranchSchema, insertUserRoleSchema } from "@shared/schema";
+import { insertMemberSchema, insertFirstTimerSchema, insertAttendanceSchema, insertCommunicationSchema, insertFollowUpTaskSchema, insertCellSchema, insertCellAttendanceSchema, insertBranchSchema, insertUserRoleSchema, signupSchema } from "@shared/schema";
 import multer from "multer";
 import { parse } from "csv-parse/sync";
 import { stringify } from "csv-stringify/sync";
@@ -13,6 +13,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Setup authentication (must be before other routes)
   await setupAuth(app);
   registerAuthRoutes(app);
+  
+  // Public signup endpoint (no authentication required)
+  app.post("/api/signup", async (req, res) => {
+    try {
+      const validatedData = signupSchema.parse(req.body);
+      
+      // Check if email already exists
+      const existingUser = await storage.getUserByEmail(validatedData.email);
+      if (existingUser) {
+        return res.status(400).json({ error: "An account with this email already exists" });
+      }
+      
+      // Create user with signup data
+      const user = await storage.createSignupUser(validatedData);
+      res.status(201).json({ message: "Registration successful", user });
+    } catch (error: any) {
+      console.error("Error during signup:", error);
+      if (error.name === 'ZodError') {
+        res.status(400).json({ error: error.errors[0]?.message || "Invalid data" });
+      } else {
+        res.status(500).json({ error: error.message || "Registration failed" });
+      }
+    }
+  });
+
+  // Public endpoint to get branches for signup form
+  app.get("/api/public/branches", async (req, res) => {
+    try {
+      const branchList = await storage.getBranches();
+      res.json(branchList);
+    } catch (error) {
+      console.error("Error fetching branches:", error);
+      res.status(500).json({ error: "Failed to fetch branches" });
+    }
+  });
+
   // Stats endpoint
   app.get("/api/stats", async (req, res) => {
     try {

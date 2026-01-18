@@ -111,6 +111,10 @@ export interface IStorage {
   assignUserRole(data: InsertUserRole): Promise<UserRole>;
   updateUserRole(id: string, data: Partial<InsertUserRole>): Promise<UserRole>;
   deleteUserRole(id: string): Promise<void>;
+  
+  // User signup
+  getUserByEmail(email: string): Promise<User | undefined>;
+  createSignupUser(data: { firstName: string; lastName: string; gender: string; address: string; phoneNumber: string; email: string; branchId: string }): Promise<User>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -773,6 +777,24 @@ export class DatabaseStorage implements IStorage {
 
   async deleteUserRole(id: string): Promise<void> {
     await db.delete(userRoles).where(eq(userRoles.id, id));
+  }
+
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.email, email));
+    return user;
+  }
+
+  async createSignupUser(data: { firstName: string; lastName: string; gender: string; address: string; phoneNumber: string; email: string; branchId: string }): Promise<User> {
+    const [user] = await db.insert(users).values({
+      firstName: data.firstName,
+      lastName: data.lastName,
+      gender: data.gender,
+      address: data.address,
+      phoneNumber: data.phoneNumber,
+      email: data.email,
+      branchId: data.branchId,
+    }).returning();
+    return user;
   }
 }
 
