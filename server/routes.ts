@@ -872,6 +872,153 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ==================== REPORTING API ENDPOINTS ====================
+  // These endpoints are designed for third-party reporting tools
+  // All endpoints require super_admin role for full data access
+  // POST endpoints allow creating members and first-timers
+
+  // GET all members (for reporting)
+  app.get("/api/reporting/members", isAuthenticated, requireRole("super_admin"), async (req, res) => {
+    try {
+      const members = await storage.getMembers({});
+      res.json(members);
+    } catch (error) {
+      console.error("Error fetching members for reporting:", error);
+      res.status(500).json({ error: "Failed to fetch members" });
+    }
+  });
+
+  // POST create member (for reporting/external systems)
+  app.post("/api/reporting/members", isAuthenticated, requireRole("super_admin"), async (req, res) => {
+    try {
+      const validatedData = insertMemberSchema.parse(req.body);
+      const member = await storage.createMember(validatedData);
+      res.status(201).json(member);
+    } catch (error: any) {
+      console.error("Error creating member via reporting API:", error);
+      if (error.name === 'ZodError') {
+        res.status(400).json({ error: error.errors[0]?.message || "Invalid data" });
+      } else {
+        res.status(500).json({ error: error.message || "Failed to create member" });
+      }
+    }
+  });
+
+  // GET all first-timers (for reporting)
+  app.get("/api/reporting/first-timers", isAuthenticated, requireRole("super_admin"), async (req, res) => {
+    try {
+      const firstTimers = await storage.getFirstTimers();
+      res.json(firstTimers);
+    } catch (error) {
+      console.error("Error fetching first-timers for reporting:", error);
+      res.status(500).json({ error: "Failed to fetch first-timers" });
+    }
+  });
+
+  // POST create first-timer (for reporting/external systems)
+  app.post("/api/reporting/first-timers", isAuthenticated, requireRole("super_admin"), async (req, res) => {
+    try {
+      const validatedData = insertFirstTimerSchema.parse(req.body);
+      const firstTimer = await storage.createFirstTimer(validatedData);
+      res.status(201).json(firstTimer);
+    } catch (error: any) {
+      console.error("Error creating first-timer via reporting API:", error);
+      if (error.name === 'ZodError') {
+        res.status(400).json({ error: error.errors[0]?.message || "Invalid data" });
+      } else {
+        res.status(500).json({ error: error.message || "Failed to create first-timer" });
+      }
+    }
+  });
+
+  // GET all attendance records (for reporting)
+  app.get("/api/reporting/attendance", isAuthenticated, requireRole("super_admin"), async (req, res) => {
+    try {
+      const attendance = await storage.getAttendance({});
+      res.json(attendance);
+    } catch (error) {
+      console.error("Error fetching attendance for reporting:", error);
+      res.status(500).json({ error: "Failed to fetch attendance" });
+    }
+  });
+
+  // GET all communications (for reporting)
+  app.get("/api/reporting/communications", isAuthenticated, requireRole("super_admin"), async (req, res) => {
+    try {
+      const communications = await storage.getCommunications();
+      res.json(communications);
+    } catch (error) {
+      console.error("Error fetching communications for reporting:", error);
+      res.status(500).json({ error: "Failed to fetch communications" });
+    }
+  });
+
+  // GET all follow-up tasks (for reporting)
+  app.get("/api/reporting/follow-up-tasks", isAuthenticated, requireRole("super_admin"), async (req, res) => {
+    try {
+      const tasks = await storage.getFollowUpTasks({});
+      res.json(tasks);
+    } catch (error) {
+      console.error("Error fetching follow-up tasks for reporting:", error);
+      res.status(500).json({ error: "Failed to fetch follow-up tasks" });
+    }
+  });
+
+  // GET all cells (for reporting)
+  app.get("/api/reporting/cells", isAuthenticated, requireRole("super_admin"), async (req, res) => {
+    try {
+      const cells = await storage.getCells();
+      res.json(cells);
+    } catch (error) {
+      console.error("Error fetching cells for reporting:", error);
+      res.status(500).json({ error: "Failed to fetch cells" });
+    }
+  });
+
+  // GET all cell attendance (for reporting)
+  app.get("/api/reporting/cell-attendance", isAuthenticated, requireRole("super_admin"), async (req, res) => {
+    try {
+      const cellAttendance = await storage.getAllCellAttendance();
+      res.json(cellAttendance);
+    } catch (error) {
+      console.error("Error fetching cell attendance for reporting:", error);
+      res.status(500).json({ error: "Failed to fetch cell attendance" });
+    }
+  });
+
+  // GET all branches (for reporting)
+  app.get("/api/reporting/branches", isAuthenticated, requireRole("super_admin"), async (req, res) => {
+    try {
+      const branches = await storage.getBranches();
+      res.json(branches);
+    } catch (error) {
+      console.error("Error fetching branches for reporting:", error);
+      res.status(500).json({ error: "Failed to fetch branches" });
+    }
+  });
+
+  // GET all users (for reporting)
+  app.get("/api/reporting/users", isAuthenticated, requireRole("super_admin"), async (req, res) => {
+    try {
+      const users = await storage.getUsers();
+      res.json(users);
+    } catch (error) {
+      console.error("Error fetching users for reporting:", error);
+      res.status(500).json({ error: "Failed to fetch users" });
+    }
+  });
+
+  // GET all user roles (for reporting)
+  app.get("/api/reporting/user-roles", isAuthenticated, requireRole("super_admin"), async (req, res) => {
+    try {
+      const userRoles = await storage.getAllUserRoles();
+      res.json(userRoles);
+    } catch (error) {
+      console.error("Error fetching user roles for reporting:", error);
+      res.status(500).json({ error: "Failed to fetch user roles" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

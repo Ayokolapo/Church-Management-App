@@ -52,6 +52,7 @@ export interface IStorage {
   convertFirstTimerToMember(id: string): Promise<Member>;
 
   // Attendance
+  getAttendance(filters: { memberId?: string; serviceDate?: string }): Promise<Attendance[]>;
   getAttendanceByDate(serviceDate: string): Promise<Record<string, string>>;
   toggleAttendance(memberId: string, serviceDate: string, status: string): Promise<Attendance>;
   markAllPresentByStatus(serviceDate: string, status: string): Promise<void>;
@@ -93,6 +94,7 @@ export interface IStorage {
   
   // Cell Attendance
   getCellAttendance(cellId: string, meetingDate?: string): Promise<CellAttendanceWithMember[]>;
+  getAllCellAttendance(): Promise<CellAttendance[]>;
   recordCellAttendance(data: InsertCellAttendance): Promise<CellAttendance>;
   deleteCellAttendance(id: string): Promise<void>;
   getCellMeetingDates(cellId: string): Promise<string[]>;
@@ -104,8 +106,12 @@ export interface IStorage {
   updateBranch(id: string, branch: Partial<InsertBranch>): Promise<Branch>;
   deleteBranch(id: string): Promise<void>;
   
+  // Users
+  getUsers(): Promise<User[]>;
+  
   // User Roles
   getAllUsers(): Promise<UserWithRole[]>;
+  getAllUserRoles(): Promise<UserRole[]>;
   getUserWithRole(userId: string): Promise<UserWithRole | undefined>;
   getUserRole(userId: string): Promise<UserRole | undefined>;
   assignUserRole(data: InsertUserRole): Promise<UserRole>;
@@ -277,6 +283,22 @@ export class DatabaseStorage implements IStorage {
       .where(eq(firstTimers.id, id));
 
     return newMember;
+  }
+
+  async getAttendance(filters: { memberId?: string; serviceDate?: string }): Promise<Attendance[]> {
+    const conditions = [];
+    if (filters.memberId) {
+      conditions.push(eq(attendance.memberId, filters.memberId));
+    }
+    if (filters.serviceDate) {
+      conditions.push(eq(attendance.serviceDate, filters.serviceDate));
+    }
+    
+    const query = db.select().from(attendance).orderBy(desc(attendance.serviceDate));
+    if (conditions.length > 0) {
+      return await query.where(and(...conditions));
+    }
+    return await query;
   }
 
   async getAttendanceByDate(serviceDate: string): Promise<Record<string, string>> {
@@ -638,6 +660,10 @@ export class DatabaseStorage implements IStorage {
     return records;
   }
 
+  async getAllCellAttendance(): Promise<CellAttendance[]> {
+    return await db.select().from(cellAttendance).orderBy(desc(cellAttendance.meetingDate));
+  }
+
   async recordCellAttendance(data: InsertCellAttendance): Promise<CellAttendance> {
     const existing = await db
       .select()
@@ -701,6 +727,11 @@ export class DatabaseStorage implements IStorage {
     await db.delete(branches).where(eq(branches.id, id));
   }
 
+  // User methods
+  async getUsers(): Promise<User[]> {
+    return await db.select().from(users).orderBy(users.firstName, users.lastName);
+  }
+
   // User Role methods
   async getAllUsers(): Promise<UserWithRole[]> {
     const allUsers = await db.select().from(users).orderBy(users.firstName, users.lastName);
@@ -753,6 +784,10 @@ export class DatabaseStorage implements IStorage {
   async getUserRole(userId: string): Promise<UserRole | undefined> {
     const [role] = await db.select().from(userRoles).where(eq(userRoles.userId, userId));
     return role || undefined;
+  }
+
+  async getAllUserRoles(): Promise<UserRole[]> {
+    return await db.select().from(userRoles).orderBy(desc(userRoles.createdAt));
   }
 
   async assignUserRole(data: InsertUserRole): Promise<UserRole> {
