@@ -52,6 +52,21 @@ Preferred communication style: Simple, everyday language.
 - Standard HTTP methods: GET (list/retrieve), POST (create/action), PUT/PATCH (update), DELETE (remove)
 - Query parameters for filtering (status, gender, occupation, cluster)
 
+**Reporting API (for third-party tools)**
+All reporting endpoints require Super Admin authentication:
+- GET /api/reporting/members - All members data
+- GET /api/reporting/first-timers - All first-timers data
+- GET /api/reporting/attendance - All attendance records
+- GET /api/reporting/communications - All communication logs
+- GET /api/reporting/follow-up-tasks - All follow-up tasks
+- GET /api/reporting/cells - All cells data
+- GET /api/reporting/cell-attendance - All cell attendance records
+- GET /api/reporting/branches - All branches data
+- GET /api/reporting/users - All users data
+- GET /api/reporting/user-roles - All user role assignments
+- POST /api/reporting/members - Create new member
+- POST /api/reporting/first-timers - Create new first-timer
+
 **File Upload Handling**
 - Multer middleware for CSV import processing
 - In-memory storage strategy for file uploads
