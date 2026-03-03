@@ -137,7 +137,7 @@ export const insertMemberSchema = createInsertSchema(members, {
   occupation: z.enum(['Students', 'Workers', 'Unemployed', 'Self-Employed']),
   status: z.enum(['Crowd', 'Potential', 'Committed', 'Worker', 'Leader']),
   followUpType: z.enum(['General', 'Adhoc']).optional(),
-  archive: z.enum(['Relocated', 'Has a church', 'Wrong number', 'Unreachable', 'Not interested']).optional(),
+  archive: z.enum(['Relocated', 'Has a church', 'Wrong number', 'Unreachable', 'Not interested']).nullish(),
 }).omit({
   id: true,
   createdAt: true,

@@ -388,7 +388,7 @@ export function MemberDialog({ member, open, onClose }: MemberDialogProps) {
                   <FormItem>
                     <FormLabel>Archive Status</FormLabel>
                     <Select 
-                      onValueChange={(value) => field.onChange(value === "none" ? undefined : value)} 
+                      onValueChange={(value) => field.onChange(value === "none" ? null : value)}
                       value={field.value || "none"}
                     >
                       <FormControl>

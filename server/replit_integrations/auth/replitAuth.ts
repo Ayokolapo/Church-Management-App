@@ -11,6 +11,8 @@ import { storage } from "../../storage";
 
 type UserRoleType = "super_admin" | "branch_admin" | "group_admin" | "cell_leader" | "branch_rep";
 
+const isLocalDev = !process.env.REPL_ID && process.env.NODE_ENV !== "production";
+
 const getOidcConfig = memoize(
   async () => {
     return await client.discovery(
@@ -26,7 +28,7 @@ export function getSession() {
   const pgStore = connectPg(session);
   const sessionStore = new pgStore({
     conString: process.env.DATABASE_URL,
-    createTableIfMissing: false,
+    createTableIfMissing: true,
     ttl: sessionTtl,
     tableName: "sessions",
   });
@@ -37,7 +39,7 @@ export function getSession() {
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: true,
+      secure: !isLocalDev,
       maxAge: sessionTtl,
     },
   });
@@ -63,11 +65,63 @@ async function upsertUser(claims: any) {
   });
 }
 
+async function setupLocalDevAuth(app: Express) {
+  const devEmail = process.env.DEV_USER_EMAIL ?? "admin@waypoint.local";
+  const devUserId = "dev-local-user";
+
+  // Ensure dev user exists in DB
+  await authStorage.upsertUser({
+    id: devUserId,
+    email: devEmail,
+    firstName: "Dev",
+    lastName: "Admin",
+  });
+
+  // Ensure dev user has super_admin role
+  try {
+    const existingRole = await storage.getUserRole(devUserId);
+    if (!existingRole) {
+      await storage.assignUserRole({
+        userId: devUserId,
+        role: "super_admin",
+      });
+    }
+  } catch (_) {
+    // role may already exist — ignore
+  }
+
+  passport.serializeUser((user: Express.User, cb) => cb(null, user));
+  passport.deserializeUser((user: Express.User, cb) => cb(null, user));
+
+  // Auto-login route for local dev
+  app.get("/api/login", (req, res) => {
+    const devUser = {
+      claims: { sub: devUserId, email: devEmail },
+      expires_at: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60,
+    };
+    req.login(devUser, (err) => {
+      if (err) return res.status(500).json({ message: "Login failed" });
+      res.redirect("/");
+    });
+  });
+
+  app.get("/api/logout", (req, res) => {
+    req.logout(() => res.redirect("/"));
+  });
+
+  console.log(`[dev] Local auth enabled. Auto-login as ${devEmail} at /api/login`);
+}
+
 export async function setupAuth(app: Express) {
   app.set("trust proxy", 1);
   app.use(getSession());
   app.use(passport.initialize());
   app.use(passport.session());
+
+  if (isLocalDev) {
+    await setupLocalDevAuth(app);
+    return;
+  }
 
   const config = await getOidcConfig();
 
@@ -136,6 +190,13 @@ export async function setupAuth(app: Express) {
 export const isAuthenticated: RequestHandler = async (req, res, next) => {
   const user = req.user as any;
 
+  if (isLocalDev) {
+    if (!req.isAuthenticated() || !user?.claims?.sub) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    return next();
+  }
+
   if (!req.isAuthenticated() || !user.expires_at) {
     return res.status(401).json({ message: "Unauthorized" });
   }
@@ -172,7 +233,7 @@ export const requireRole = (...allowedRoles: UserRoleType[]): RequestHandler => 
 
     try {
       const userRole = await storage.getUserRole(user.claims.sub);
-      
+
       if (!userRole) {
         return res.status(403).json({ message: "Forbidden: No role assigned" });
       }
