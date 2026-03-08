@@ -43,6 +43,11 @@ const mainMenuItems = [
     icon: Network,
   },
   {
+    title: "Outreach",
+    url: "/outreach",
+    icon: Megaphone,
+  },
+  {
     title: "Follow-up Tasks",
     url: "/follow-up-tasks",
     icon: ClipboardList,
@@ -51,11 +56,6 @@ const mainMenuItems = [
     title: "Communications",
     url: "/communications",
     icon: MessageSquare,
-  },
-  {
-    title: "Outreach",
-    url: "/outreach",
-    icon: Megaphone,
   },
 ];
 
