@@ -1,11 +1,12 @@
 import { useState, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Plus, Download, Upload, Filter, Columns, Search } from "lucide-react";
+import { Plus, Download, Upload, Filter, Columns, Search, GitMerge } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MemberTable } from "@/components/member-table";
 import { MemberDialog } from "@/components/member-dialog";
 import { ImportDialog } from "@/components/import-dialog";
+import { MergeDuplicatesDialog } from "@/components/merge-duplicates-dialog";
 import { ColumnVisibilityDialog, DEFAULT_VISIBLE_COLUMNS } from "@/components/column-visibility-dialog";
 import { MemberFilters } from "@/components/member-filters";
 import type { MemberWithAttendanceStats } from "@shared/schema";
@@ -15,6 +16,7 @@ export default function Members() {
   const [showMemberDialog, setShowMemberDialog] = useState(false);
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [showColumnDialog, setShowColumnDialog] = useState(false);
+  const [showMergeDialog, setShowMergeDialog] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedMember, setSelectedMember] = useState<MemberWithAttendanceStats | null>(null);
@@ -132,6 +134,14 @@ export default function Members() {
             <Download className="w-4 h-4 mr-2" />
             Export CSV
           </Button>
+          <Button
+            variant="outline"
+            onClick={() => setShowMergeDialog(true)}
+            data-testid="button-find-duplicates"
+          >
+            <GitMerge className="w-4 h-4 mr-2" />
+            Find Duplicates
+          </Button>
         </div>
       </div>
 
@@ -203,6 +213,13 @@ export default function Members() {
           onClose={() => setShowColumnDialog(false)}
           visibleColumns={visibleColumns}
           onToggleColumn={handleToggleColumn}
+        />
+      )}
+
+      {showMergeDialog && (
+        <MergeDuplicatesDialog
+          open={showMergeDialog}
+          onClose={() => setShowMergeDialog(false)}
         />
       )}
     </div>

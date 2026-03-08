@@ -24,6 +24,7 @@ export const members = pgTable("members", {
   followUpType: text("follow_up_type"),
   archive: text("archive"),
   summaryNotes: text("summary_notes"),
+  branchId: varchar("branch_id").references(() => branches.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -44,6 +45,7 @@ export const firstTimers = pgTable("first_timers", {
   howHeardAbout: text("how_heard_about").notNull(),
   whoInvited: text("who_invited"),
   feedback: text("feedback"),
+  branchId: varchar("branch_id").references(() => branches.id),
   convertedToMember: timestamp("converted_to_member"),
   memberId: varchar("member_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -82,10 +84,19 @@ export const followUpTasks = pgTable("follow_up_tasks", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+export const clusters = pgTable("clusters", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  branchId: varchar("branch_id").notNull().references(() => branches.id, { onDelete: 'cascade' }),
+  leader: text("leader"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 export const cells = pgTable("cells", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
-  cluster: text("cluster").notNull(),
+  clusterId: varchar("cluster_id").notNull().references(() => clusters.id, { onDelete: 'cascade' }),
   leader: text("leader"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -118,6 +129,14 @@ export const branches = pgTable("branches", {
 // branch_rep: Branch Representatives - view/edit branch data, no role management
 export const userRoleEnum = ['super_admin', 'branch_admin', 'group_admin', 'cell_leader', 'branch_rep'] as const;
 
+// Role permissions table - which permissions each role has
+export const rolePermissions = pgTable("role_permissions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  role: text("role").notNull(),
+  permission: text("permission").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // User roles table - assigns roles to users with optional branch/cell scope
 export const userRoles = pgTable("user_roles", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -137,7 +156,8 @@ export const insertMemberSchema = createInsertSchema(members, {
   occupation: z.enum(['Students', 'Workers', 'Unemployed', 'Self-Employed']),
   status: z.enum(['Crowd', 'Potential', 'Committed', 'Worker', 'Leader']),
   followUpType: z.enum(['General', 'Adhoc']).optional(),
-  archive: z.enum(['Relocated', 'Has a church', 'Wrong number', 'Unreachable', 'Not interested']).nullish(),
+  archive: z.enum(['Active', 'Relocated', 'Has a church', 'Wrong number', 'Unreachable', 'Not interested']).nullish(),
+  branchId: z.string().min(1, "Branch is required").optional(),
 }).omit({
   id: true,
   createdAt: true,
@@ -152,6 +172,7 @@ export const insertFirstTimerSchema = createInsertSchema(firstTimers, {
   seeingAgain: z.enum(['Yes', 'No', 'Maybe']),
   howHeardAbout: z.enum(['Oikia member', 'Social media', 'Billboard/Lamp post']),
   enjoyedAboutService: z.array(z.enum(['Sermon', 'Prayer', 'Praise and worship', 'Ambience'])),
+  branchId: z.string().min(1, "Branch is required").optional(),
 }).omit({
   id: true,
   createdAt: true,
@@ -191,9 +212,15 @@ export const insertFollowUpTaskSchema = createInsertSchema(followUpTasks, {
   completedAt: true,
 });
 
+export const insertClusterSchema = createInsertSchema(clusters, {
+  name: z.string().min(1, "Cluster name is required"),
+  branchId: z.string().min(1, "Branch is required"),
+  leader: z.string().optional(),
+}).omit({ id: true, createdAt: true, updatedAt: true });
+
 export const insertCellSchema = createInsertSchema(cells, {
   name: z.string().min(1, "Cell name is required"),
-  cluster: z.string().min(1, "Cluster is required"),
+  clusterId: z.string().min(1, "Cluster is required"),
   leader: z.string().optional(),
 }).omit({
   id: true,
@@ -220,6 +247,27 @@ export const insertBranchSchema = createInsertSchema(branches, {
   createdAt: true,
   updatedAt: true,
 });
+
+export const outreach = pgTable("outreach", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  phoneNumber: text("phone_number").notNull(),
+  clusterId: varchar("cluster_id").references(() => clusters.id, { onDelete: "set null" }),
+  address: text("address"),
+  notes: text("notes"),
+  branchId: varchar("branch_id").references(() => branches.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertOutreachSchema = createInsertSchema(outreach, {
+  name: z.string().min(1, "Name is required"),
+  phoneNumber: z.string().min(1, "Phone number is required"),
+  clusterId: z.string().optional().nullable(),
+  address: z.string().optional().nullable(),
+  notes: z.string().optional().nullable(),
+  branchId: z.string().optional().nullable(),
+}).omit({ id: true, createdAt: true, updatedAt: true });
 
 export const insertUserRoleSchema = createInsertSchema(userRoles, {
   userId: z.string().min(1, "User is required"),
@@ -254,6 +302,10 @@ export type FollowUpTaskWithMember = FollowUpTask & {
   member: Member;
 };
 
+export type Cluster = typeof clusters.$inferSelect;
+export type InsertCluster = z.infer<typeof insertClusterSchema>;
+export type ClusterWithCells = Cluster & { cells: Cell[]; cellCount: number; branchName?: string };
+
 export type Cell = typeof cells.$inferSelect;
 export type InsertCell = z.infer<typeof insertCellSchema>;
 export type CellAttendance = typeof cellAttendance.$inferSelect;
@@ -262,17 +314,23 @@ export type InsertCellAttendance = z.infer<typeof insertCellAttendanceSchema>;
 export type CellWithMembers = Cell & {
   members: Member[];
   memberCount: number;
+  clusterName?: string;
 };
 
 export type CellAttendanceWithMember = CellAttendance & {
   member: Member;
 };
 
+export type Outreach = typeof outreach.$inferSelect;
+export type InsertOutreach = z.infer<typeof insertOutreachSchema>;
+export type OutreachWithMemberStatus = Outreach & { isMember: boolean; clusterName?: string | null };
+
 export type Branch = typeof branches.$inferSelect;
 export type InsertBranch = z.infer<typeof insertBranchSchema>;
 export type UserRole = typeof userRoles.$inferSelect;
 export type InsertUserRole = z.infer<typeof insertUserRoleSchema>;
 export type UserRoleType = typeof userRoleEnum[number];
+export type RolePermission = typeof rolePermissions.$inferSelect;
 
 // User with role information
 export type UserWithRole = {

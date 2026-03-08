@@ -1,13 +1,15 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Plus, MapPin, Trash2, Edit, Building2, Lock } from "lucide-react";
+import { Plus, MapPin, Trash2, Edit, Building2, Lock, Layers, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
@@ -15,7 +17,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
-import type { Branch } from "@shared/schema";
+import type { Branch, Cluster, ClusterWithCells, UserWithRole } from "@shared/schema";
 
 const branchFormSchema = z.object({
   name: z.string().min(1, "Branch name is required"),
@@ -24,17 +26,55 @@ const branchFormSchema = z.object({
   description: z.string().optional(),
 });
 
+const clusterFormSchema = z.object({
+  name: z.string().min(1, "Cluster name is required"),
+  leader: z.string().optional(),
+});
+
 type BranchFormData = z.infer<typeof branchFormSchema>;
+type ClusterFormData = z.infer<typeof clusterFormSchema>;
 
 export default function Branches() {
   const { toast } = useToast();
-  const { isAuthenticated, isLoading: authLoading, hasAdminAccess, isRoleLoading } = useAuth();
+  const { isAuthenticated, isLoading: authLoading, hasAdminAccess } = useAuth();
+
+  // Branch dialog state
   const [showDialog, setShowDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [selectedBranch, setSelectedBranch] = useState<Branch | null>(null);
 
+  // Cluster dialog state
+  const [showClustersDialog, setShowClustersDialog] = useState(false);
+  const [activeBranch, setActiveBranch] = useState<Branch | null>(null);
+  const [showClusterFormDialog, setShowClusterFormDialog] = useState(false);
+  const [editingCluster, setEditingCluster] = useState<Cluster | null>(null);
+  const [showDeleteClusterDialog, setShowDeleteClusterDialog] = useState(false);
+  const [clusterToDelete, setClusterToDelete] = useState<Cluster | null>(null);
+
   const { data: branches, isLoading } = useQuery<Branch[]>({
     queryKey: ["/api/branches"],
+    enabled: isAuthenticated,
+  });
+
+  const { data: allClusters } = useQuery<ClusterWithCells[]>({
+    queryKey: ["/api/clusters"],
+    enabled: isAuthenticated,
+  });
+
+  const { data: branchClusters, isLoading: clustersLoading } = useQuery<ClusterWithCells[]>({
+    queryKey: ["/api/clusters", activeBranch?.id],
+    queryFn: async () => {
+      if (!activeBranch) return [];
+      const res = await fetch(`/api/clusters?branchId=${activeBranch.id}`);
+      if (!res.ok) throw new Error("Failed to fetch clusters");
+      return res.json();
+    },
+    enabled: !!activeBranch && showClustersDialog,
+    staleTime: 0,
+  });
+
+  const { data: usersData } = useQuery<UserWithRole[]>({
+    queryKey: ["/api/users"],
     enabled: isAuthenticated,
   });
 
@@ -82,20 +122,21 @@ export default function Branches() {
     );
   }
 
+  // Branch form
   const form = useForm<BranchFormData>({
     resolver: zodResolver(branchFormSchema),
-    defaultValues: {
-      name: "",
-      address: "",
-      city: "",
-      description: "",
-    },
+    defaultValues: { name: "", address: "", city: "", description: "" },
   });
 
+  // Cluster form
+  const clusterForm = useForm<ClusterFormData>({
+    resolver: zodResolver(clusterFormSchema),
+    defaultValues: { name: "", leader: "" },
+  });
+
+  // Branch mutations
   const createMutation = useMutation({
-    mutationFn: async (data: BranchFormData) => {
-      return apiRequest("POST", "/api/branches", data);
-    },
+    mutationFn: async (data: BranchFormData) => apiRequest("POST", "/api/branches", data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/branches"] });
       toast({ title: "Branch created successfully" });
@@ -107,9 +148,8 @@ export default function Branches() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: async (data: BranchFormData) => {
-      return apiRequest("PATCH", `/api/branches/${selectedBranch?.id}`, data);
-    },
+    mutationFn: async (data: BranchFormData) =>
+      apiRequest("PATCH", `/api/branches/${selectedBranch?.id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/branches"] });
       toast({ title: "Branch updated successfully" });
@@ -121,9 +161,7 @@ export default function Branches() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      return apiRequest("DELETE", `/api/branches/${id}`);
-    },
+    mutationFn: async (id: string) => apiRequest("DELETE", `/api/branches/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/branches"] });
       toast({ title: "Branch deleted successfully" });
@@ -135,6 +173,50 @@ export default function Branches() {
     },
   });
 
+  // Cluster mutations
+  const createClusterMutation = useMutation({
+    mutationFn: async (data: ClusterFormData) =>
+      apiRequest("POST", "/api/clusters", { ...data, branchId: activeBranch?.id }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clusters"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/clusters", activeBranch?.id] });
+      toast({ title: "Cluster created successfully" });
+      handleCloseClusterForm();
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to create cluster", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const updateClusterMutation = useMutation({
+    mutationFn: async (data: ClusterFormData) =>
+      apiRequest("PATCH", `/api/clusters/${editingCluster?.id}`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clusters"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/clusters", activeBranch?.id] });
+      toast({ title: "Cluster updated successfully" });
+      handleCloseClusterForm();
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to update cluster", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const deleteClusterMutation = useMutation({
+    mutationFn: async (id: string) => apiRequest("DELETE", `/api/clusters/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clusters"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/clusters", activeBranch?.id] });
+      toast({ title: "Cluster deleted successfully" });
+      setShowDeleteClusterDialog(false);
+      setClusterToDelete(null);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to delete cluster", description: error.message, variant: "destructive" });
+    },
+  });
+
+  // Branch handlers
   const handleCloseDialog = () => {
     setShowDialog(false);
     setSelectedBranch(null);
@@ -164,6 +246,46 @@ export default function Branches() {
       createMutation.mutate(data);
     }
   };
+
+  // Cluster handlers
+  const handleOpenClusters = (branch: Branch) => {
+    setActiveBranch(branch);
+    setShowClustersDialog(true);
+  };
+
+  const handleCloseClusterForm = () => {
+    setShowClusterFormDialog(false);
+    setEditingCluster(null);
+    clusterForm.reset({ name: "", leader: "" });
+  };
+
+  const handleAddCluster = () => {
+    setEditingCluster(null);
+    clusterForm.reset({ name: "", leader: "" });
+    setShowClusterFormDialog(true);
+  };
+
+  const handleEditCluster = (cluster: Cluster) => {
+    setEditingCluster(cluster);
+    clusterForm.reset({ name: cluster.name, leader: cluster.leader || "" });
+    setShowClusterFormDialog(true);
+  };
+
+  const handleDeleteCluster = (cluster: Cluster) => {
+    setClusterToDelete(cluster);
+    setShowDeleteClusterDialog(true);
+  };
+
+  const handleClusterSubmit = (data: ClusterFormData) => {
+    if (editingCluster) {
+      updateClusterMutation.mutate(data);
+    } else {
+      createClusterMutation.mutate(data);
+    }
+  };
+
+  const getClusterCount = (branchId: string) =>
+    allClusters?.filter((c) => c.branchId === branchId).length ?? 0;
 
   if (isLoading) {
     return (
@@ -223,16 +345,16 @@ export default function Branches() {
                 </div>
                 {hasAdminAccess && (
                   <div className="flex gap-1">
-                    <Button 
-                      variant="ghost" 
+                    <Button
+                      variant="ghost"
                       size="icon"
                       onClick={() => handleEdit(branch)}
                       data-testid={`button-edit-branch-${branch.id}`}
                     >
                       <Edit className="w-4 h-4" />
                     </Button>
-                    <Button 
-                      variant="ghost" 
+                    <Button
+                      variant="ghost"
                       size="icon"
                       onClick={() => handleDelete(branch)}
                       data-testid={`button-delete-branch-${branch.id}`}
@@ -255,12 +377,24 @@ export default function Branches() {
                 {branch.description && (
                   <p className="text-sm">{branch.description}</p>
                 )}
+                <div className="pt-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleOpenClusters(branch)}
+                    data-testid={`button-clusters-${branch.id}`}
+                  >
+                    <Layers className="w-4 h-4 mr-2" />
+                    Clusters ({getClusterCount(branch.id)})
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           ))}
         </div>
       )}
 
+      {/* Branch add/edit dialog */}
       <Dialog open={showDialog} onOpenChange={setShowDialog}>
         <DialogContent>
           <DialogHeader>
@@ -314,9 +448,9 @@ export default function Branches() {
                   <FormItem>
                     <FormLabel>Description</FormLabel>
                     <FormControl>
-                      <Textarea 
-                        placeholder="Brief description of the branch" 
-                        {...field} 
+                      <Textarea
+                        placeholder="Brief description of the branch"
+                        {...field}
                         data-testid="input-branch-description"
                       />
                     </FormControl>
@@ -328,13 +462,13 @@ export default function Branches() {
                 <Button type="button" variant="outline" onClick={handleCloseDialog}>
                   Cancel
                 </Button>
-                <Button 
-                  type="submit" 
+                <Button
+                  type="submit"
                   disabled={createMutation.isPending || updateMutation.isPending}
                   data-testid="button-submit-branch"
                 >
-                  {createMutation.isPending || updateMutation.isPending 
-                    ? "Saving..." 
+                  {createMutation.isPending || updateMutation.isPending
+                    ? "Saving..."
                     : selectedBranch ? "Update Branch" : "Create Branch"}
                 </Button>
               </DialogFooter>
@@ -343,6 +477,7 @@ export default function Branches() {
         </DialogContent>
       </Dialog>
 
+      {/* Branch delete dialog */}
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -360,6 +495,174 @@ export default function Branches() {
               data-testid="button-confirm-delete-branch"
             >
               {deleteMutation.isPending ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Clusters management dialog */}
+      <Dialog open={showClustersDialog} onOpenChange={setShowClustersDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Layers className="w-5 h-5" />
+              Clusters — {activeBranch?.name}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-3 max-h-96 overflow-y-auto">
+            {clustersLoading ? (
+              <div className="space-y-2">
+                {[1, 2, 3].map((i) => <Skeleton key={i} className="h-14 w-full" />)}
+              </div>
+            ) : branchClusters?.length === 0 ? (
+              <p className="text-center text-muted-foreground py-6">
+                No clusters yet. Add your first cluster below.
+              </p>
+            ) : (
+              branchClusters?.map((cluster) => (
+                <div
+                  key={cluster.id}
+                  className="flex items-center justify-between p-3 border rounded-md"
+                  data-testid={`cluster-row-${cluster.id}`}
+                >
+                  <div className="flex-1">
+                    <p className="font-medium">{cluster.name}</p>
+                    {cluster.leader && (
+                      <p className="text-sm text-muted-foreground">Leader: {cluster.leader}</p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary">
+                      <Users className="w-3 h-3 mr-1" />
+                      {cluster.cellCount} {cluster.cellCount === 1 ? "cell" : "cells"}
+                    </Badge>
+                    {hasAdminAccess && (
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleEditCluster(cluster)}
+                          data-testid={`button-edit-cluster-${cluster.id}`}
+                        >
+                          <Edit className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleDeleteCluster(cluster)}
+                          data-testid={`button-delete-cluster-${cluster.id}`}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          <DialogFooter className="justify-between sm:justify-between">
+            {hasAdminAccess && (
+              <Button onClick={handleAddCluster} data-testid="button-add-cluster">
+                <Plus className="w-4 h-4 mr-2" />
+                Add Cluster
+              </Button>
+            )}
+            <Button variant="outline" onClick={() => setShowClustersDialog(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Cluster add/edit dialog */}
+      <Dialog open={showClusterFormDialog} onOpenChange={setShowClusterFormDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingCluster ? "Edit Cluster" : "Add New Cluster"}</DialogTitle>
+          </DialogHeader>
+          <Form {...clusterForm}>
+            <form onSubmit={clusterForm.handleSubmit(handleClusterSubmit)} className="space-y-4">
+              <FormField
+                control={clusterForm.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Cluster Name</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g., Cluster A" {...field} data-testid="input-cluster-name" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={clusterForm.control}
+                name="leader"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Cluster Leader (Optional)</FormLabel>
+                    <Select onValueChange={(val) => field.onChange(val === "__none__" ? "" : val)} value={field.value || "__none__"}>
+                      <FormControl>
+                        <SelectTrigger data-testid="select-cluster-leader">
+                          <SelectValue placeholder="Select a leader" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="__none__">No leader</SelectItem>
+                        {usersData?.map((user) => {
+                          const fullName = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
+                          return (
+                            <SelectItem key={user.id} value={fullName}>
+                              {fullName}
+                            </SelectItem>
+                          );
+                        })}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={handleCloseClusterForm}>
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={createClusterMutation.isPending || updateClusterMutation.isPending}
+                  data-testid="button-submit-cluster"
+                >
+                  {createClusterMutation.isPending || updateClusterMutation.isPending
+                    ? "Saving..."
+                    : editingCluster ? "Update Cluster" : "Create Cluster"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Cluster delete confirm dialog */}
+      <AlertDialog open={showDeleteClusterDialog} onOpenChange={setShowDeleteClusterDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Cluster</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{clusterToDelete?.name}"? This cannot be undone.
+              You must move or delete all cells in this cluster first.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => clusterToDelete && deleteClusterMutation.mutate(clusterToDelete.id)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="button-confirm-delete-cluster"
+            >
+              {deleteClusterMutation.isPending ? "Deleting..." : "Delete"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

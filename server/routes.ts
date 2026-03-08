@@ -1,11 +1,28 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertMemberSchema, insertFirstTimerSchema, insertAttendanceSchema, insertCommunicationSchema, insertFollowUpTaskSchema, insertCellSchema, insertCellAttendanceSchema, insertBranchSchema, insertUserRoleSchema, signupSchema } from "@shared/schema";
+import { insertMemberSchema, insertFirstTimerSchema, insertAttendanceSchema, insertCommunicationSchema, insertFollowUpTaskSchema, insertClusterSchema, insertCellSchema, insertCellAttendanceSchema, insertBranchSchema, insertUserRoleSchema, signupSchema, insertOutreachSchema } from "@shared/schema";
+import { ZodError } from "zod";
 import multer from "multer";
 import { parse } from "csv-parse/sync";
 import { stringify } from "csv-stringify/sync";
 import { setupAuth, registerAuthRoutes, isAuthenticated, requireRole } from "./replit_integrations/auth";
+import { scrypt, randomBytes, timingSafeEqual } from "crypto";
+import { promisify } from "util";
+
+const scryptAsync = promisify(scrypt);
+
+async function hashPassword(password: string): Promise<string> {
+  const salt = randomBytes(16).toString("hex");
+  const buf = (await scryptAsync(password, salt, 64)) as Buffer;
+  return `${buf.toString("hex")}.${salt}`;
+}
+
+async function verifyPassword(password: string, hash: string): Promise<boolean> {
+  const [hashed, salt] = hash.split(".");
+  const buf = (await scryptAsync(password, salt, 64)) as Buffer;
+  return timingSafeEqual(Buffer.from(hashed, "hex"), buf);
+}
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -18,20 +35,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/signup", async (req, res) => {
     try {
       const validatedData = signupSchema.parse(req.body);
-      
+
       // Normalize email to lowercase
       const normalizedEmail = validatedData.email.toLowerCase().trim();
-      
+
       // Check if email already exists
       const existingUser = await storage.getUserByEmail(normalizedEmail);
       if (existingUser) {
         return res.status(400).json({ error: "An account with this email already exists" });
       }
-      
+
+      // Hash the password before storing
+      const passwordHash = await hashPassword(validatedData.password);
+
       // Create user with signup data (normalized email)
       const user = await storage.createSignupUser({
-        ...validatedData,
+        firstName: validatedData.firstName,
+        lastName: validatedData.lastName,
+        gender: validatedData.gender,
+        address: validatedData.address,
+        phoneNumber: validatedData.phoneNumber,
         email: normalizedEmail,
+        branchId: validatedData.branchId,
+        passwordHash,
       });
       res.status(201).json({ message: "Registration successful", user });
     } catch (error: any) {
@@ -41,6 +67,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } else {
         res.status(500).json({ error: error.message || "Registration failed" });
       }
+    }
+  });
+
+  // Public sign-in endpoint (email + password)
+  app.post("/api/signin", async (req, res) => {
+    try {
+      const { email, password } = req.body;
+      if (!email || !password) {
+        return res.status(400).json({ error: "Email and password are required" });
+      }
+
+      const normalizedEmail = (email as string).toLowerCase().trim();
+      const user = await storage.getUserByEmail(normalizedEmail);
+
+      if (!user || !user.passwordHash) {
+        return res.status(401).json({ error: "Invalid email or password" });
+      }
+
+      const valid = await verifyPassword(password, user.passwordHash);
+      if (!valid) {
+        return res.status(401).json({ error: "Invalid email or password" });
+      }
+
+      // Log the user in via passport session
+      req.login({ claims: { sub: user.id, email: user.email }, expires_at: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60 }, (err) => {
+        if (err) return res.status(500).json({ error: "Login failed" });
+        res.json({ message: "Login successful" });
+      });
+    } catch (error: any) {
+      console.error("Error during signin:", error);
+      res.status(500).json({ error: "Sign in failed" });
     }
   });
 
@@ -120,6 +177,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Member duplicate detection and merge
+  app.get("/api/members/duplicates", async (req, res) => {
+    try {
+      const groups = await storage.findDuplicates();
+      console.log(`[duplicates] found ${groups.length} group(s):`, groups.map(g => `${g.reason} (${g.members.length})`));
+      res.json(groups);
+    } catch (error) {
+      console.error("Error finding duplicates:", error);
+      res.status(500).json({ error: "Failed to find duplicates" });
+    }
+  });
+
+  app.post("/api/members/merge", async (req, res) => {
+    try {
+      const { primaryId, duplicateIds } = req.body;
+      if (!primaryId || !Array.isArray(duplicateIds) || duplicateIds.length === 0) {
+        return res.status(400).json({ error: "primaryId and duplicateIds[] are required" });
+      }
+      const merged = await storage.mergeMembers(primaryId, duplicateIds);
+      res.json(merged);
+    } catch (error: any) {
+      console.error("Error merging members:", error);
+      res.status(500).json({ error: error.message || "Failed to merge members" });
+    }
+  });
+
   // Member routes
   app.get("/api/members", async (req, res) => {
     try {
@@ -176,22 +259,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const template = stringify(
         [
           {
-            firstName: "John",
-            lastName: "Doe",
-            gender: "Male",
-            mobilePhone: "+1234567890",
-            email: "john@example.com",
-            address: "123 Main St",
-            occupation: "Workers",
-            joinDate: "2024-01-01",
-            cluster: "Lekki",
-            followUpWorker: "Jane Smith",
-            cell: "Cell A",
-            status: "Crowd",
-            dateOfBirth: "1990-01-01",
-            followUpType: "General",
-            archive: "",
-            summaryNotes: "Sample notes",
+            "First Name": "John",
+            "Last Name": "Doe",
+            "Gender": "Male",
+            "Mobile Phone": "+1234567890",
+            "Email": "john@example.com",
+            "Address": "123 Main St",
+            "Occupation": "Workers",
+            "Join Date": "2024-01-01",
+            "Cluster": "Lekki",
+            "Follow Up Worker": "Jane Smith",
+            "Cell": "Cell A",
+            "Status": "Crowd",
+            "Date of Birth": "1990-01-01",
+            "Follow Up Type": "General",
+            "Archive": "",
+            "Summary Notes": "Sample notes",
           },
         ],
         { header: true }
@@ -211,14 +294,71 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "No file uploaded" });
       }
 
+      const branchId = req.body.branchId;
+      if (!branchId || !branchId.trim()) {
+        return res.status(400).json({ error: "Branch is required" });
+      }
+
       const csvData = req.file.buffer.toString("utf-8");
       const records = parse(csvData, {
         columns: true,
         skip_empty_lines: true,
-      });
+        bom: true,
+        trim: true,
+      }) as Record<string, string>[];
+
+      const failures: { row: number; field: string; reason: string }[] = [];
+
+      const REQUIRED_FIELDS = [
+        { csvCol: "First Name", label: "First Name" },
+        { csvCol: "Last Name", label: "Last Name" },
+        { csvCol: "Gender", label: "Gender" },
+        { csvCol: "Mobile Phone", label: "Mobile Phone" },
+        { csvCol: "Occupation", label: "Occupation" },
+        { csvCol: "Join Date", label: "Join Date" },
+        { csvCol: "Cluster", label: "Cluster" },
+        { csvCol: "Status", label: "Status" },
+      ];
+
+      const ENUM_FIELDS = [
+        { csvCol: "Gender", label: "Gender", allowed: ["Male", "Female"] },
+        { csvCol: "Occupation", label: "Occupation", allowed: ["Students", "Workers", "Unemployed", "Self-Employed"] },
+        { csvCol: "Status", label: "Status", allowed: ["Crowd", "Potential", "Committed", "Worker", "Leader"] },
+        { csvCol: "Archive", label: "Archive", allowed: ["Active", "Relocated", "Has a church", "Wrong number", "Unreachable", "Not interested"] },
+      ];
+
+      const fieldNameMap: Record<string, string> = {
+        firstName: "First Name", lastName: "Last Name", gender: "Gender",
+        mobilePhone: "Mobile Phone", email: "Email", address: "Address",
+        occupation: "Occupation", joinDate: "Join Date", cluster: "Cluster",
+        followUpWorker: "Follow Up Worker", cell: "Cell", status: "Status",
+        dateOfBirth: "Date of Birth", followUpType: "Follow Up Type",
+        archive: "Archive", summaryNotes: "Summary Notes", branchId: "Branch",
+      };
 
       let imported = 0;
-      for (const record of records as Record<string, string>[]) {
+
+      for (let i = 0; i < records.length; i++) {
+        const record = records[i];
+        const rowNum = i + 2; // row 1 is header
+        const failuresBefore = failures.length;
+
+        for (const { csvCol, label } of REQUIRED_FIELDS) {
+          const val = record[csvCol];
+          if (!val || val.trim() === "") {
+            failures.push({ row: rowNum, field: label, reason: "Required field is blank" });
+          }
+        }
+
+        for (const { csvCol, label, allowed } of ENUM_FIELDS) {
+          const val = record[csvCol];
+          if (val && val.trim() !== "" && !allowed.includes(val.trim())) {
+            failures.push({ row: rowNum, field: label, reason: `Invalid value "${val.trim()}". Must be one of: ${allowed.join(", ")}` });
+          }
+        }
+
+        if (failures.length > failuresBefore) continue;
+
         try {
           const memberData = {
             firstName: record["First Name"] || record.firstName,
@@ -237,17 +377,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
             followUpType: record["Follow Up Type"] || record.followUpType || "General",
             archive: record["Archive"] || record.archive || undefined,
             summaryNotes: record["Summary Notes"] || record.summaryNotes || "",
+            branchId,
           };
 
           const validatedData = insertMemberSchema.parse(memberData);
           await storage.createMember(validatedData);
           imported++;
         } catch (err) {
-          console.error("Error importing member record:", err);
+          if (err instanceof ZodError) {
+            for (const issue of err.issues) {
+              const rawField = String(issue.path[0] ?? "Unknown");
+              failures.push({ row: rowNum, field: fieldNameMap[rawField] ?? rawField, reason: issue.message });
+            }
+          } else {
+            failures.push({ row: rowNum, field: "Unknown", reason: "Unexpected error during import" });
+            console.error("Error importing member record:", err);
+          }
         }
       }
 
-      res.json({ imported, total: records.length });
+      res.json({ imported, total: records.length, failures });
     } catch (error) {
       console.error("Error importing members:", error);
       res.status(500).json({ error: "Failed to import members" });
@@ -636,11 +785,68 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Cluster routes (before cell routes to avoid id conflicts)
+  app.get("/api/clusters", isAuthenticated, async (req, res) => {
+    try {
+      const branchId = req.query.branchId as string | undefined;
+      const clusterList = await storage.getClusters(branchId);
+      res.json(clusterList);
+    } catch (error) {
+      console.error("Error fetching clusters:", error);
+      res.status(500).json({ error: "Failed to fetch clusters" });
+    }
+  });
+
+  app.get("/api/clusters/:id", isAuthenticated, async (req, res) => {
+    try {
+      const cluster = await storage.getClusterById(req.params.id);
+      if (!cluster) {
+        return res.status(404).json({ error: "Cluster not found" });
+      }
+      res.json(cluster);
+    } catch (error) {
+      console.error("Error fetching cluster:", error);
+      res.status(500).json({ error: "Failed to fetch cluster" });
+    }
+  });
+
+  app.post("/api/clusters", isAuthenticated, requireRole("super_admin"), async (req, res) => {
+    try {
+      const validatedData = insertClusterSchema.parse(req.body);
+      const cluster = await storage.createCluster(validatedData);
+      res.json(cluster);
+    } catch (error: any) {
+      console.error("Error creating cluster:", error);
+      res.status(400).json({ error: error.message || "Failed to create cluster" });
+    }
+  });
+
+  app.patch("/api/clusters/:id", isAuthenticated, requireRole("super_admin"), async (req, res) => {
+    try {
+      const validatedData = insertClusterSchema.partial().parse(req.body);
+      const cluster = await storage.updateCluster(req.params.id, validatedData);
+      res.json(cluster);
+    } catch (error: any) {
+      console.error("Error updating cluster:", error);
+      res.status(400).json({ error: error.message || "Failed to update cluster" });
+    }
+  });
+
+  app.delete("/api/clusters/:id", isAuthenticated, requireRole("super_admin"), async (req, res) => {
+    try {
+      await storage.deleteCluster(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting cluster:", error);
+      res.status(400).json({ error: error.message || "Failed to delete cluster" });
+    }
+  });
+
   // Cell routes
   app.get("/api/cells", async (req, res) => {
     try {
-      const cluster = req.query.cluster as string | undefined;
-      const cells = await storage.getCells(cluster);
+      const clusterId = req.query.clusterId as string | undefined;
+      const cells = await storage.getCells(clusterId);
       res.json(cells);
     } catch (error) {
       console.error("Error fetching cells:", error);
@@ -975,6 +1181,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // GET single cell by ID (for reporting)
+  app.get("/api/reporting/cells/:id", isAuthenticated, requireRole("super_admin"), async (req, res) => {
+    try {
+      const cell = await storage.getCellById(req.params.id);
+      if (!cell) return res.status(404).json({ error: "Cell not found" });
+      res.json(cell);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch cell" });
+    }
+  });
+
+  // POST create cell (for reporting/external systems)
+  app.post("/api/reporting/cells", isAuthenticated, requireRole("super_admin"), async (req, res) => {
+    try {
+      const validatedData = insertCellSchema.parse(req.body);
+      const cell = await storage.createCell(validatedData);
+      res.status(201).json(cell);
+    } catch (error: any) {
+      if (error.name === "ZodError") return res.status(400).json({ error: error.errors[0]?.message || "Invalid data" });
+      res.status(500).json({ error: error.message || "Failed to create cell" });
+    }
+  });
+
+  // PATCH update cell (for reporting/external systems)
+  app.patch("/api/reporting/cells/:id", isAuthenticated, requireRole("super_admin"), async (req, res) => {
+    try {
+      const validatedData = insertCellSchema.partial().parse(req.body);
+      const cell = await storage.updateCell(req.params.id, validatedData);
+      res.json(cell);
+    } catch (error: any) {
+      if (error.name === "ZodError") return res.status(400).json({ error: error.errors[0]?.message || "Invalid data" });
+      res.status(500).json({ error: error.message || "Failed to update cell" });
+    }
+  });
+
   // GET all cell attendance (for reporting)
   app.get("/api/reporting/cell-attendance", isAuthenticated, requireRole("super_admin"), async (req, res) => {
     try {
@@ -997,6 +1238,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // GET single branch by ID (for reporting)
+  app.get("/api/reporting/branches/:id", isAuthenticated, requireRole("super_admin"), async (req, res) => {
+    try {
+      const branch = await storage.getBranchById(req.params.id);
+      if (!branch) return res.status(404).json({ error: "Branch not found" });
+      res.json(branch);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch branch" });
+    }
+  });
+
+  // POST create branch (for reporting/external systems)
+  app.post("/api/reporting/branches", isAuthenticated, requireRole("super_admin"), async (req, res) => {
+    try {
+      const validatedData = insertBranchSchema.parse(req.body);
+      const branch = await storage.createBranch(validatedData);
+      res.status(201).json(branch);
+    } catch (error: any) {
+      if (error.name === "ZodError") return res.status(400).json({ error: error.errors[0]?.message || "Invalid data" });
+      res.status(500).json({ error: error.message || "Failed to create branch" });
+    }
+  });
+
+  // PATCH update branch (for reporting/external systems)
+  app.patch("/api/reporting/branches/:id", isAuthenticated, requireRole("super_admin"), async (req, res) => {
+    try {
+      const validatedData = insertBranchSchema.partial().parse(req.body);
+      const branch = await storage.updateBranch(req.params.id, validatedData);
+      res.json(branch);
+    } catch (error: any) {
+      if (error.name === "ZodError") return res.status(400).json({ error: error.errors[0]?.message || "Invalid data" });
+      res.status(500).json({ error: error.message || "Failed to update branch" });
+    }
+  });
+
   // GET all users (for reporting)
   app.get("/api/reporting/users", isAuthenticated, requireRole("super_admin"), async (req, res) => {
     try {
@@ -1008,6 +1284,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // GET all clusters (for reporting)
+  app.get("/api/reporting/clusters", isAuthenticated, requireRole("super_admin"), async (req, res) => {
+    try {
+      const clusterList = await storage.getClusters();
+      res.json(clusterList);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch clusters" });
+    }
+  });
+
+  // GET single cluster by ID (for reporting)
+  app.get("/api/reporting/clusters/:id", isAuthenticated, requireRole("super_admin"), async (req, res) => {
+    try {
+      const cluster = await storage.getClusterById(req.params.id);
+      if (!cluster) return res.status(404).json({ error: "Cluster not found" });
+      res.json(cluster);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch cluster" });
+    }
+  });
+
+  // POST create cluster (for reporting/external systems)
+  app.post("/api/reporting/clusters", isAuthenticated, requireRole("super_admin"), async (req, res) => {
+    try {
+      const validatedData = insertClusterSchema.parse(req.body);
+      const cluster = await storage.createCluster(validatedData);
+      res.status(201).json(cluster);
+    } catch (error: any) {
+      if (error.name === "ZodError") return res.status(400).json({ error: error.errors[0]?.message || "Invalid data" });
+      res.status(500).json({ error: error.message || "Failed to create cluster" });
+    }
+  });
+
+  // PATCH update cluster (for reporting/external systems)
+  app.patch("/api/reporting/clusters/:id", isAuthenticated, requireRole("super_admin"), async (req, res) => {
+    try {
+      const validatedData = insertClusterSchema.partial().parse(req.body);
+      const cluster = await storage.updateCluster(req.params.id, validatedData);
+      res.json(cluster);
+    } catch (error: any) {
+      if (error.name === "ZodError") return res.status(400).json({ error: error.errors[0]?.message || "Invalid data" });
+      res.status(500).json({ error: error.message || "Failed to update cluster" });
+    }
+  });
+
   // GET all user roles (for reporting)
   app.get("/api/reporting/user-roles", isAuthenticated, requireRole("super_admin"), async (req, res) => {
     try {
@@ -1016,6 +1337,77 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching user roles for reporting:", error);
       res.status(500).json({ error: "Failed to fetch user roles" });
+    }
+  });
+
+  // Role Permissions
+  app.get("/api/role-permissions", isAuthenticated, async (req, res) => {
+    try {
+      const data = await storage.getRolePermissions();
+      res.json(data);
+    } catch (error) {
+      console.error("Error fetching role permissions:", error);
+      res.status(500).json({ error: "Failed to fetch role permissions" });
+    }
+  });
+
+  app.put("/api/role-permissions", isAuthenticated, requireRole("super_admin"), async (req, res) => {
+    try {
+      const data = req.body as Record<string, string[]>;
+      await storage.setRolePermissions(data);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error saving role permissions:", error);
+      res.status(500).json({ error: "Failed to save role permissions" });
+    }
+  });
+
+  // Outreach routes
+  app.get("/api/outreach", isAuthenticated, async (req, res) => {
+    try {
+      const branchId = req.query.branchId as string | undefined;
+      const records = await storage.getOutreach(branchId);
+      res.json(records);
+    } catch (error) {
+      console.error("Error fetching outreach:", error);
+      res.status(500).json({ error: "Failed to fetch outreach records" });
+    }
+  });
+
+  app.post("/api/outreach", isAuthenticated, async (req, res) => {
+    try {
+      const data = insertOutreachSchema.parse(req.body);
+      const record = await storage.createOutreach(data);
+      res.status(201).json(record);
+    } catch (error: any) {
+      if (error.name === "ZodError") {
+        res.status(400).json({ error: error.errors[0]?.message || "Invalid data" });
+      } else {
+        res.status(500).json({ error: "Failed to create outreach record" });
+      }
+    }
+  });
+
+  app.patch("/api/outreach/:id", isAuthenticated, async (req, res) => {
+    try {
+      const data = insertOutreachSchema.partial().parse(req.body);
+      const record = await storage.updateOutreach(req.params.id, data);
+      res.json(record);
+    } catch (error: any) {
+      if (error.name === "ZodError") {
+        res.status(400).json({ error: error.errors[0]?.message || "Invalid data" });
+      } else {
+        res.status(500).json({ error: "Failed to update outreach record" });
+      }
+    }
+  });
+
+  app.delete("/api/outreach/:id", isAuthenticated, async (req, res) => {
+    try {
+      await storage.deleteOutreach(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete outreach record" });
     }
   });
 

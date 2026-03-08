@@ -16,17 +16,15 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { format } from "date-fns";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import type { CellWithMembers, MemberWithAttendanceStats, CellAttendanceWithMember } from "@shared/schema";
+import type { CellWithMembers, MemberWithAttendanceStats, CellAttendanceWithMember, ClusterWithCells, UserWithRole } from "@shared/schema";
 
 const cellFormSchema = z.object({
   name: z.string().min(1, "Cell name is required"),
-  cluster: z.string().min(1, "Cluster is required"),
+  clusterId: z.string().min(1, "Cluster is required"),
   leader: z.string().optional(),
 });
 
 type CellFormData = z.infer<typeof cellFormSchema>;
-
-const clusters = ["Cluster A", "Cluster B", "Cluster C", "Cluster D", "Cluster E"];
 
 export default function Cells() {
   const { toast } = useToast();
@@ -34,13 +32,22 @@ export default function Cells() {
   const [showAttendanceDialog, setShowAttendanceDialog] = useState(false);
   const [showMembersDialog, setShowMembersDialog] = useState(false);
   const [selectedCell, setSelectedCell] = useState<CellWithMembers | null>(null);
-  const [expandedClusters, setExpandedClusters] = useState<Set<string>>(new Set(clusters));
+  const [collapsedClusters, setCollapsedClusters] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState("");
   const [attendanceDate, setAttendanceDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [selectedMembers, setSelectedMembers] = useState<Set<string>>(new Set());
+  const [attendanceMemberSearch, setAttendanceMemberSearch] = useState("");
 
   const { data: cells, isLoading: cellsLoading } = useQuery<CellWithMembers[]>({
     queryKey: ["/api/cells"],
+  });
+
+  const { data: clustersData } = useQuery<ClusterWithCells[]>({
+    queryKey: ["/api/clusters"],
+  });
+
+  const { data: usersData } = useQuery<UserWithRole[]>({
+    queryKey: ["/api/users"],
   });
 
   const { data: allMembers } = useQuery<MemberWithAttendanceStats[]>({
@@ -58,11 +65,23 @@ export default function Cells() {
     enabled: !!selectedCell && showAttendanceDialog,
   });
 
+  const { data: meetingDates } = useQuery<string[]>({
+    queryKey: ["/api/cells", selectedCell?.id, "meeting-dates"],
+    queryFn: async () => {
+      if (!selectedCell) return [];
+      const res = await fetch(`/api/cells/${selectedCell.id}/meeting-dates`);
+      if (!res.ok) throw new Error("Failed to fetch meeting dates");
+      return res.json();
+    },
+    enabled: !!selectedCell && showAttendanceDialog,
+    staleTime: 0,
+  });
+
   const form = useForm<CellFormData>({
     resolver: zodResolver(cellFormSchema),
     defaultValues: {
       name: "",
-      cluster: "",
+      clusterId: "",
       leader: "",
     },
   });
@@ -135,14 +154,14 @@ export default function Cells() {
   const handleCloseDialog = () => {
     setShowCellDialog(false);
     setSelectedCell(null);
-    form.reset({ name: "", cluster: "", leader: "" });
+    form.reset({ name: "", clusterId: "", leader: "" });
   };
 
   const handleEditCell = (cell: CellWithMembers) => {
     setSelectedCell(cell);
     form.reset({
       name: cell.name,
-      cluster: cell.cluster,
+      clusterId: cell.clusterId,
       leader: cell.leader || "",
     });
     setShowCellDialog(true);
@@ -151,6 +170,7 @@ export default function Cells() {
   const handleOpenAttendance = (cell: CellWithMembers) => {
     setSelectedCell(cell);
     setSelectedMembers(new Set());
+    setAttendanceMemberSearch("");
     setShowAttendanceDialog(true);
   };
 
@@ -169,7 +189,7 @@ export default function Cells() {
 
   const handleToggleMemberAttendance = async (memberId: string, isPresent: boolean) => {
     if (!selectedCell) return;
-    
+
     if (isPresent) {
       setSelectedMembers(prev => {
         const newSet = new Set(prev);
@@ -194,38 +214,46 @@ export default function Cells() {
     }
   };
 
-  const toggleCluster = (cluster: string) => {
-    setExpandedClusters(prev => {
+  const toggleCluster = (clusterName: string) => {
+    setCollapsedClusters(prev => {
       const newSet = new Set(prev);
-      if (newSet.has(cluster)) {
-        newSet.delete(cluster);
+      if (newSet.has(clusterName)) {
+        newSet.delete(clusterName);
       } else {
-        newSet.add(cluster);
+        newSet.add(clusterName);
       }
       return newSet;
     });
   };
 
   const groupedCells = cells?.reduce((acc, cell) => {
-    if (!acc[cell.cluster]) {
-      acc[cell.cluster] = [];
-    }
-    acc[cell.cluster].push(cell);
+    const key = cell.clusterName || "Unknown Cluster";
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(cell);
     return acc;
   }, {} as Record<string, CellWithMembers[]>) || {};
 
-  const filteredGroupedCells = Object.entries(groupedCells).reduce((acc, [cluster, clusterCells]) => {
-    const filtered = clusterCells.filter(cell => 
+  const filteredGroupedCells = Object.entries(groupedCells).reduce((acc, [clusterName, clusterCells]) => {
+    const filtered = clusterCells.filter(cell =>
       cell.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       cell.leader?.toLowerCase().includes(searchTerm.toLowerCase())
     );
     if (filtered.length > 0) {
-      acc[cluster] = filtered;
+      acc[clusterName] = filtered;
     }
     return acc;
   }, {} as Record<string, CellWithMembers[]>);
 
   const cellMembers = selectedCell ? allMembers?.filter(m => m.cell === selectedCell.name) : [];
+
+  const filteredAttendanceMembers = (allMembers ?? []).filter(m => {
+    if (!attendanceMemberSearch) return true;
+    const s = attendanceMemberSearch.toLowerCase();
+    return `${m.firstName} ${m.lastName}`.toLowerCase().includes(s) ||
+      m.mobilePhone.includes(s);
+  });
+
+  const presentCount = cellAttendance?.length ?? 0;
 
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
@@ -267,22 +295,19 @@ export default function Cells() {
         </Card>
       ) : (
         <div className="space-y-4">
-          {clusters.map(cluster => {
-            const clusterCells = filteredGroupedCells[cluster];
-            if (!clusterCells || clusterCells.length === 0) return null;
-            
-            const isExpanded = expandedClusters.has(cluster);
-            
+          {Object.entries(filteredGroupedCells).map(([clusterName, clusterCells]) => {
+            const isExpanded = !collapsedClusters.has(clusterName);
+
             return (
-              <Card key={cluster}>
-                <CardHeader 
+              <Card key={clusterName}>
+                <CardHeader
                   className="cursor-pointer hover-elevate"
-                  onClick={() => toggleCluster(cluster)}
-                  data-testid={`cluster-header-${cluster.toLowerCase().replace(' ', '-')}`}
+                  onClick={() => toggleCluster(clusterName)}
+                  data-testid={`cluster-header-${clusterName.toLowerCase().replace(/\s+/g, '-')}`}
                 >
                   <CardTitle className="flex items-center gap-2 text-lg">
                     {isExpanded ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
-                    {cluster}
+                    {clusterName}
                     <Badge variant="secondary" className="ml-2">
                       {clusterCells.length} {clusterCells.length === 1 ? "cell" : "cells"}
                     </Badge>
@@ -376,7 +401,7 @@ export default function Cells() {
               />
               <FormField
                 control={form.control}
-                name="cluster"
+                name="clusterId"
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Cluster</FormLabel>
@@ -387,9 +412,9 @@ export default function Cells() {
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {clusters.map(cluster => (
-                          <SelectItem key={cluster} value={cluster}>
-                            {cluster}
+                        {clustersData?.map(cluster => (
+                          <SelectItem key={cluster.id} value={cluster.id}>
+                            {cluster.name}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -403,10 +428,25 @@ export default function Cells() {
                 name="leader"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Leader (Optional)</FormLabel>
-                    <FormControl>
-                      <Input {...field} placeholder="Enter leader name" data-testid="input-leader" />
-                    </FormControl>
+                    <FormLabel>Cell Leader (Optional)</FormLabel>
+                    <Select onValueChange={(val) => field.onChange(val === "__none__" ? "" : val)} value={field.value || "__none__"}>
+                      <FormControl>
+                        <SelectTrigger data-testid="select-cell-leader">
+                          <SelectValue placeholder="Select a leader" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="__none__">No leader</SelectItem>
+                        {usersData?.map((user) => {
+                          const fullName = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
+                          return (
+                            <SelectItem key={user.id} value={fullName}>
+                              {fullName}
+                            </SelectItem>
+                          );
+                        })}
+                      </SelectContent>
+                    </Select>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -415,8 +455,8 @@ export default function Cells() {
                 <Button type="button" variant="outline" onClick={handleCloseDialog}>
                   Cancel
                 </Button>
-                <Button 
-                  type="submit" 
+                <Button
+                  type="submit"
                   disabled={createCellMutation.isPending || updateCellMutation.isPending}
                   data-testid="button-submit-cell"
                 >
@@ -436,8 +476,8 @@ export default function Cells() {
           <div className="space-y-2 max-h-96 overflow-y-auto">
             {cellMembers && cellMembers.length > 0 ? (
               cellMembers.map(member => (
-                <div 
-                  key={member.id} 
+                <div
+                  key={member.id}
                   className="flex items-center justify-between p-3 border rounded-md"
                   data-testid={`member-item-${member.id}`}
                 >
@@ -465,30 +505,79 @@ export default function Cells() {
       <Dialog open={showAttendanceDialog} onOpenChange={setShowAttendanceDialog}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Record Attendance - {selectedCell?.name}</DialogTitle>
+            <DialogTitle className="flex items-center justify-between pr-6">
+              <span>Cell Attendance — {selectedCell?.name}</span>
+              <Badge variant="secondary" className="ml-2">
+                <Check className="w-3 h-3 mr-1" />
+                {presentCount} present
+              </Badge>
+            </DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
+
+          <div className="space-y-3">
+            {/* Date picker */}
             <div>
               <label className="text-sm font-medium">Meeting Date</label>
               <Input
                 type="date"
                 value={attendanceDate}
-                onChange={(e) => setAttendanceDate(e.target.value)}
+                onChange={(e) => {
+                  setAttendanceDate(e.target.value);
+                  setSelectedMembers(new Set());
+                }}
                 className="mt-1"
                 data-testid="input-meeting-date"
               />
             </div>
-            <div className="space-y-2 max-h-72 overflow-y-auto">
-              <p className="text-sm text-muted-foreground mb-2">
-                Select members who attended:
-              </p>
-              {cellMembers && cellMembers.length > 0 ? (
-                cellMembers.map(member => {
+
+            {/* Past meetings quick-select */}
+            {meetingDates && meetingDates.length > 0 && (
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">Past meetings</p>
+                <div className="flex flex-wrap gap-1">
+                  {meetingDates.slice(0, 8).map(date => (
+                    <Button
+                      key={date}
+                      variant={attendanceDate === date ? "default" : "outline"}
+                      size="sm"
+                      className="h-7 text-xs px-2"
+                      onClick={() => {
+                        setAttendanceDate(date);
+                        setSelectedMembers(new Set());
+                      }}
+                    >
+                      {format(new Date(date + "T00:00:00"), "MMM d")}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Search members */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search all members..."
+                value={attendanceMemberSearch}
+                onChange={(e) => setAttendanceMemberSearch(e.target.value)}
+                className="pl-9"
+                data-testid="input-attendance-search"
+              />
+            </div>
+
+            {/* Member list */}
+            <div className="space-y-1 max-h-64 overflow-y-auto pr-1">
+              {filteredAttendanceMembers.length === 0 ? (
+                <p className="text-center text-muted-foreground py-6 text-sm">
+                  {attendanceMemberSearch ? "No members match your search." : "No members found."}
+                </p>
+              ) : (
+                filteredAttendanceMembers.map(member => {
                   const isPresent = cellAttendance?.some(a => a.memberId === member.id) || selectedMembers.has(member.id);
                   return (
-                    <div 
-                      key={member.id} 
-                      className="flex items-center gap-3 p-3 border rounded-md hover-elevate cursor-pointer"
+                    <div
+                      key={member.id}
+                      className="flex items-center gap-3 p-2.5 border rounded-md hover-elevate cursor-pointer"
                       onClick={() => handleToggleMemberAttendance(member.id, !isPresent)}
                       data-testid={`attendance-member-${member.id}`}
                     >
@@ -497,23 +586,18 @@ export default function Cells() {
                         onCheckedChange={(checked) => handleToggleMemberAttendance(member.id, !!checked)}
                         data-testid={`checkbox-attendance-${member.id}`}
                       />
-                      <div className="flex-1">
-                        <p className="font-medium">{member.firstName} {member.lastName}</p>
-                        <p className="text-sm text-muted-foreground">{member.mobilePhone}</p>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm">{member.firstName} {member.lastName}</p>
+                        <p className="text-xs text-muted-foreground">{member.mobilePhone}</p>
                       </div>
-                      {isPresent && (
-                        <Check className="w-4 h-4 text-green-600" />
-                      )}
+                      {isPresent && <Check className="w-4 h-4 text-green-600 shrink-0" />}
                     </div>
                   );
                 })
-              ) : (
-                <p className="text-center text-muted-foreground py-4">
-                  No members assigned to this cell. Assign members first before recording attendance.
-                </p>
               )}
             </div>
           </div>
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowAttendanceDialog(false)}>
               Done

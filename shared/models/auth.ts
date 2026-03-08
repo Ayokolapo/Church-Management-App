@@ -27,6 +27,7 @@ export const users = pgTable("users", {
   address: varchar("address"),
   phoneNumber: varchar("phone_number"),
   branchId: varchar("branch_id"),
+  passwordHash: varchar("password_hash"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -42,6 +43,7 @@ export const signupSchema = z.object({
   phoneNumber: z.string().min(1, "Phone number is required"),
   email: z.string().email("Valid email is required"),
   branchId: z.string().min(1, "Branch is required"),
+  password: z.string().min(8, "Password must be at least 8 characters"),
 });
 
 export type SignupData = z.infer<typeof signupSchema>;

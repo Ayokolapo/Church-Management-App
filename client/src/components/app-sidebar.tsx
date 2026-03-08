@@ -1,4 +1,4 @@
-import { Users, UserPlus, CalendarCheck, Home, MessageSquare, ClipboardList, Network, Building2, UserCog, LogOut } from "lucide-react";
+import { Users, UserPlus, CalendarCheck, Home, MessageSquare, ClipboardList, Network, Building2, UserCog, ShieldCheck, LogOut, Megaphone } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import {
   Sidebar,
@@ -52,6 +52,11 @@ const mainMenuItems = [
     url: "/communications",
     icon: MessageSquare,
   },
+  {
+    title: "Outreach",
+    url: "/outreach",
+    icon: Megaphone,
+  },
 ];
 
 const adminMenuItems = [
@@ -64,6 +69,11 @@ const adminMenuItems = [
     title: "User Management",
     url: "/users",
     icon: UserCog,
+  },
+  {
+    title: "Roles & Permissions",
+    url: "/roles-permissions",
+    icon: ShieldCheck,
   },
 ];
 
@@ -144,7 +154,7 @@ export function AppSidebar() {
             </div>
           </div>
         ) : isAuthenticated && user ? (
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex flex-col gap-3">
             <div className="flex items-center gap-3 min-w-0">
               <Avatar className="w-8 h-8">
                 <AvatarImage src={user.profileImageUrl || undefined} />
@@ -157,13 +167,14 @@ export function AppSidebar() {
                 )}
               </div>
             </div>
-            <Button 
-              variant="ghost" 
-              size="icon" 
+            <Button
+              variant="outline"
+              className="w-full"
               onClick={() => logout()}
               data-testid="button-logout"
             >
-              <LogOut className="w-4 h-4" />
+              <LogOut className="w-4 h-4 mr-2" />
+              Logout
             </Button>
           </div>
         ) : (

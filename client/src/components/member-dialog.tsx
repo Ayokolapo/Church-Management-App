@@ -1,7 +1,7 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { insertMemberSchema, type InsertMember, type MemberWithAttendanceStats, type Cell } from "@shared/schema";
+import { insertMemberSchema, type InsertMember, type MemberWithAttendanceStats, type Cell, type Branch } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -43,6 +43,10 @@ export function MemberDialog({ member, open, onClose }: MemberDialogProps) {
     queryKey: ["/api/cells"],
   });
 
+  const { data: branches } = useQuery<Branch[]>({
+    queryKey: ["/api/branches"],
+  });
+
   const form = useForm<InsertMember>({
     resolver: zodResolver(insertMemberSchema),
     defaultValues: member
@@ -63,6 +67,7 @@ export function MemberDialog({ member, open, onClose }: MemberDialogProps) {
           followUpType: member.followUpType as any,
           archive: member.archive as any,
           summaryNotes: member.summaryNotes || "",
+          branchId: member.branchId ?? "",
         }
       : {
           firstName: "",
@@ -81,6 +86,7 @@ export function MemberDialog({ member, open, onClose }: MemberDialogProps) {
           followUpType: "General",
           archive: undefined,
           summaryNotes: "",
+          branchId: "",
         },
   });
 
@@ -154,6 +160,31 @@ export function MemberDialog({ member, open, onClose }: MemberDialogProps) {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <FormField
+                control={form.control}
+                name="branchId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Branch *</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger data-testid="select-branch">
+                          <SelectValue placeholder="Select a branch" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {branches?.map((branch) => (
+                          <SelectItem key={branch.id} value={branch.id}>
+                            {branch.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
               <FormField
                 control={form.control}
                 name="gender"
@@ -306,7 +337,7 @@ export function MemberDialog({ member, open, onClose }: MemberDialogProps) {
                         <SelectItem value="none">No Cell</SelectItem>
                         {cells?.filter((cell) => cell.name).map((cell) => (
                           <SelectItem key={cell.id} value={cell.name}>
-                            {cell.name} ({cell.cluster})
+                            {cell.name} ({cell.clusterName ?? cell.clusterId})
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -398,6 +429,7 @@ export function MemberDialog({ member, open, onClose }: MemberDialogProps) {
                       </FormControl>
                       <SelectContent>
                         <SelectItem value="none">None</SelectItem>
+                        <SelectItem value="Active">Active</SelectItem>
                         <SelectItem value="Relocated">Relocated</SelectItem>
                         <SelectItem value="Has a church">Has a church</SelectItem>
                         <SelectItem value="Wrong number">Wrong number</SelectItem>

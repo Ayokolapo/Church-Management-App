@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
+import { useAuth } from "@/hooks/use-auth";
 import Dashboard from "@/pages/dashboard";
 import Members from "@/pages/members";
 import FirstTimers from "@/pages/first-timers";
@@ -15,7 +16,9 @@ import FollowUpTasks from "@/pages/follow-up-tasks";
 import FirstTimerForm from "@/pages/first-timer-form";
 import Branches from "@/pages/branches";
 import Users from "@/pages/users";
-import Signup from "@/pages/signup";
+import RolesPermissions from "@/pages/roles-permissions";
+import AuthPage from "@/pages/auth-page";
+import Outreach from "@/pages/outreach";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -31,43 +34,58 @@ function Router() {
       <Route path="/first-timer-form" component={FirstTimerForm} />
       <Route path="/branches" component={Branches} />
       <Route path="/users" component={Users} />
+      <Route path="/roles-permissions" component={RolesPermissions} />
+      <Route path="/outreach" component={Outreach} />
       <Route component={NotFound} />
     </Switch>
   );
 }
 
-function App() {
+function AppShell() {
+  const { isAuthenticated, isLoading } = useAuth();
   const style = {
     "--sidebar-width": "16rem",
     "--sidebar-width-icon": "3rem",
   };
 
+  // Public routes always rendered regardless of auth state
+  return (
+    <Switch>
+      <Route path="/first-timer-form">
+        <FirstTimerForm />
+      </Route>
+      <Route>
+        {isLoading ? (
+          <div className="flex h-screen items-center justify-center">
+            <div className="w-8 h-8 border-4 border-orange-400 border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : !isAuthenticated ? (
+          <AuthPage />
+        ) : (
+          <SidebarProvider style={style as React.CSSProperties}>
+            <div className="flex h-screen w-full">
+              <AppSidebar />
+              <div className="flex flex-col flex-1 overflow-hidden">
+                <header className="flex items-center justify-between p-4 border-b bg-background">
+                  <SidebarTrigger data-testid="button-sidebar-toggle" />
+                </header>
+                <main className="flex-1 overflow-y-auto">
+                  <Router />
+                </main>
+              </div>
+            </div>
+          </SidebarProvider>
+        )}
+      </Route>
+    </Switch>
+  );
+}
+
+function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <Switch>
-          <Route path="/signup">
-            <Signup />
-          </Route>
-          <Route path="/first-timer-form">
-            <FirstTimerForm />
-          </Route>
-          <Route>
-            <SidebarProvider style={style as React.CSSProperties}>
-              <div className="flex h-screen w-full">
-                <AppSidebar />
-                <div className="flex flex-col flex-1 overflow-hidden">
-                  <header className="flex items-center justify-between p-4 border-b bg-background">
-                    <SidebarTrigger data-testid="button-sidebar-toggle" />
-                  </header>
-                  <main className="flex-1 overflow-y-auto">
-                    <Router />
-                  </main>
-                </div>
-              </div>
-            </SidebarProvider>
-          </Route>
-        </Switch>
+        <AppShell />
         <Toaster />
       </TooltipProvider>
     </QueryClientProvider>

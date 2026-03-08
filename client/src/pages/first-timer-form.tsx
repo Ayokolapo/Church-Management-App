@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { insertFirstTimerSchema, type InsertFirstTimer } from "@shared/schema";
+import { insertFirstTimerSchema, type InsertFirstTimer, type Branch, type Cluster } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -29,6 +29,10 @@ import { CheckCircle } from "lucide-react";
 export default function FirstTimerForm() {
   const [isSubmitted, setIsSubmitted] = useState(false);
 
+  const { data: branches } = useQuery<Branch[]>({
+    queryKey: ["/api/branches"],
+  });
+
   const form = useForm<InsertFirstTimer>({
     resolver: zodResolver(insertFirstTimerSchema),
     defaultValues: {
@@ -46,7 +50,19 @@ export default function FirstTimerForm() {
       howHeardAbout: "Oikia member",
       whoInvited: "",
       feedback: "",
+      branchId: "",
     },
+  });
+
+  const selectedBranchId = form.watch("branchId");
+
+  const { data: clusters } = useQuery<Cluster[]>({
+    queryKey: ["/api/clusters", selectedBranchId],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/clusters?branchId=${selectedBranchId}`);
+      return res.json();
+    },
+    enabled: !!selectedBranchId,
   });
 
   const submitMutation = useMutation({
@@ -151,6 +167,37 @@ export default function FirstTimerForm() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FormField
                     control={form.control}
+                    name="branchId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Branch *</FormLabel>
+                        <Select
+                          onValueChange={(value) => {
+                            field.onChange(value);
+                            form.setValue("closestAxis", "");
+                          }}
+                          value={field.value}
+                        >
+                          <FormControl>
+                            <SelectTrigger data-testid="select-branch">
+                              <SelectValue placeholder="Select a branch" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {branches?.map((branch) => (
+                              <SelectItem key={branch.id} value={branch.id}>
+                                {branch.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
                     name="gender"
                     render={({ field }) => (
                       <FormItem>
@@ -236,9 +283,32 @@ export default function FirstTimerForm() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>What axis is closest to where you stay? *</FormLabel>
-                      <FormControl>
-                        <Input {...field} placeholder="e.g., Lekki, Victoria Island" data-testid="input-axis" />
-                      </FormControl>
+                      <Select
+                        onValueChange={field.onChange}
+                        value={field.value}
+                        disabled={!selectedBranchId || !clusters?.length}
+                      >
+                        <FormControl>
+                          <SelectTrigger data-testid="select-axis">
+                            <SelectValue
+                              placeholder={
+                                !selectedBranchId
+                                  ? "Select a branch first"
+                                  : clusters?.length
+                                  ? "Select an axis"
+                                  : "No clusters available"
+                              }
+                            />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {clusters?.map((cluster) => (
+                            <SelectItem key={cluster.id} value={cluster.name}>
+                              {cluster.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                       <FormMessage />
                     </FormItem>
                   )}
