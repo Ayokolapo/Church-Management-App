@@ -213,14 +213,14 @@ export const insertFollowUpTaskSchema = createInsertSchema(followUpTasks, {
 });
 
 export const insertClusterSchema = createInsertSchema(clusters, {
-  name: z.string().min(1, "Cluster name is required"),
-  branchId: z.string().min(1, "Branch is required"),
+  name: z.string({ required_error: "Cluster name is required" }).min(1, "Cluster name is required"),
+  branchId: z.string({ required_error: "Branch is required" }).min(1, "Branch is required"),
   leader: z.string().optional(),
 }).omit({ id: true, createdAt: true, updatedAt: true });
 
 export const insertCellSchema = createInsertSchema(cells, {
-  name: z.string().min(1, "Cell name is required"),
-  clusterId: z.string().min(1, "Cluster is required"),
+  name: z.string({ required_error: "Cell name is required" }).min(1, "Cell name is required"),
+  clusterId: z.string({ required_error: "Cluster is required" }).min(1, "Cluster is required"),
   leader: z.string().optional(),
 }).omit({
   id: true,
