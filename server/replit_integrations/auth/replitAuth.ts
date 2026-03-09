@@ -12,6 +12,7 @@ import { storage } from "../../storage";
 type UserRoleType = "super_admin" | "branch_admin" | "group_admin" | "cell_leader" | "branch_rep";
 
 const isLocalDev = !process.env.REPL_ID && process.env.NODE_ENV !== "production";
+const isPasswordOnlyAuth = !process.env.REPL_ID && process.env.NODE_ENV === "production";
 
 const getOidcConfig = memoize(
   async () => {
@@ -120,6 +121,18 @@ export async function setupAuth(app: Express) {
 
   if (isLocalDev) {
     await setupLocalDevAuth(app);
+    return;
+  }
+
+  if (isPasswordOnlyAuth) {
+    // No Replit OIDC — auth is handled by /api/signin and /api/signup routes.
+    // Just wire up passport session serialization and a logout route.
+    passport.serializeUser((user: Express.User, cb) => cb(null, user));
+    passport.deserializeUser((user: Express.User, cb) => cb(null, user));
+    app.get("/api/logout", (req, res) => {
+      req.logout(() => res.redirect("/"));
+    });
+    console.log("[auth] Password-only auth mode (no Replit OIDC)");
     return;
   }
 
