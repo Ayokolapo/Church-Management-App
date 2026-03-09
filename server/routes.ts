@@ -6,7 +6,7 @@ import { ZodError } from "zod";
 import multer from "multer";
 import { parse } from "csv-parse/sync";
 import { stringify } from "csv-stringify/sync";
-import { setupAuth, registerAuthRoutes, isAuthenticated, requireRole } from "./replit_integrations/auth";
+import { setupAuth, registerAuthRoutes, isAuthenticated, requireRole, requirePermission, invalidatePermissionsCache } from "./replit_integrations/auth";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
 
@@ -156,7 +156,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Communications endpoints
-  app.post("/api/communications/send", async (req, res) => {
+  app.post("/api/communications/send", isAuthenticated, requirePermission("communications.send"), async (req, res) => {
     try {
       const validatedData = insertCommunicationSchema.parse(req.body);
       const communication = await storage.sendBulkCommunication(validatedData);
@@ -167,7 +167,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/communications", async (req, res) => {
+  app.get("/api/communications", isAuthenticated, requirePermission("communications.send"), async (req, res) => {
     try {
       const communications = await storage.getCommunications();
       res.json(communications);
@@ -178,7 +178,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Member duplicate detection and merge
-  app.get("/api/members/duplicates", async (req, res) => {
+  app.get("/api/members/duplicates", isAuthenticated, requirePermission("members.view"), async (req, res) => {
     try {
       const groups = await storage.findDuplicates();
       console.log(`[duplicates] found ${groups.length} group(s):`, groups.map(g => `${g.reason} (${g.members.length})`));
@@ -189,7 +189,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/members/merge", async (req, res) => {
+  app.post("/api/members/merge", isAuthenticated, requirePermission("members.edit"), async (req, res) => {
     try {
       const { primaryId, duplicateIds } = req.body;
       if (!primaryId || !Array.isArray(duplicateIds) || duplicateIds.length === 0) {
@@ -204,7 +204,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Member routes
-  app.get("/api/members", async (req, res) => {
+  app.get("/api/members", isAuthenticated, requirePermission("members.view"), async (req, res) => {
     try {
       const filters = {
         status: req.query.status as string,
@@ -221,7 +221,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // CSV routes must come before :id route to prevent "export", "template", "import" from being matched as IDs
-  app.get("/api/members/export", async (req, res) => {
+  app.get("/api/members/export", isAuthenticated, requirePermission("members.view"), async (req, res) => {
     try {
       const members = await storage.getMembers();
       const csvData = stringify(members, {
@@ -254,7 +254,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/members/template", async (req, res) => {
+  app.get("/api/members/template", isAuthenticated, requirePermission("members.import"), async (req, res) => {
     try {
       const template = stringify(
         [
@@ -288,7 +288,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/members/import", upload.single("file"), async (req, res) => {
+  app.post("/api/members/import", isAuthenticated, requirePermission("members.import"), upload.single("file"), async (req, res) => {
     try {
       if (!req.file) {
         return res.status(400).json({ error: "No file uploaded" });
@@ -404,7 +404,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Parameterized routes must come after specific routes
-  app.get("/api/members/:id", async (req, res) => {
+  app.get("/api/members/:id", isAuthenticated, requirePermission("members.view"), async (req, res) => {
     try {
       const member = await storage.getMemberById(req.params.id);
       if (!member) {
@@ -417,7 +417,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/members", async (req, res) => {
+  app.post("/api/members", isAuthenticated, requirePermission("members.create"), async (req, res) => {
     try {
       const validatedData = insertMemberSchema.parse(req.body);
       const member = await storage.createMember(validatedData);
@@ -428,7 +428,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/members/:id", async (req, res) => {
+  app.patch("/api/members/:id", isAuthenticated, requirePermission("members.edit"), async (req, res) => {
     try {
       const validatedData = insertMemberSchema.partial().parse(req.body);
       const member = await storage.updateMember(req.params.id, validatedData);
@@ -439,7 +439,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/members/:id", async (req, res) => {
+  app.delete("/api/members/:id", isAuthenticated, requirePermission("members.delete"), async (req, res) => {
     try {
       await storage.deleteMember(req.params.id);
       res.json({ success: true });
@@ -450,7 +450,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // First Timer routes
-  app.get("/api/first-timers", async (req, res) => {
+  app.get("/api/first-timers", isAuthenticated, requirePermission("first_timers.view"), async (req, res) => {
     try {
       const firstTimers = await storage.getFirstTimers();
       res.json(firstTimers);
@@ -460,7 +460,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/first-timers", async (req, res) => {
+  app.post("/api/first-timers", isAuthenticated, requirePermission("first_timers.create"), async (req, res) => {
     try {
       console.log("First timer submission received:", req.body);
       const validatedData = insertFirstTimerSchema.parse(req.body);
@@ -475,7 +475,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/first-timers/:id/convert", async (req, res) => {
+  app.post("/api/first-timers/:id/convert", isAuthenticated, requirePermission("first_timers.convert"), async (req, res) => {
     try {
       const member = await storage.convertFirstTimerToMember(req.params.id);
       res.json(member);
@@ -485,7 +485,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/first-timers/export", async (req, res) => {
+  app.get("/api/first-timers/export", isAuthenticated, requirePermission("first_timers.view"), async (req, res) => {
     try {
       const firstTimers = await storage.getFirstTimers();
       const csvData = stringify(firstTimers, {
@@ -516,7 +516,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/first-timers/template", async (req, res) => {
+  app.get("/api/first-timers/template", isAuthenticated, requirePermission("first_timers.create"), async (req, res) => {
     try {
       const template = stringify(
         [
@@ -548,7 +548,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/first-timers/import", upload.single("file"), async (req, res) => {
+  app.post("/api/first-timers/import", isAuthenticated, requirePermission("first_timers.create"), upload.single("file"), async (req, res) => {
     try {
       if (!req.file) {
         return res.status(400).json({ error: "No file uploaded" });
@@ -601,7 +601,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Attendance routes
-  app.get("/api/attendance", async (req, res) => {
+  app.get("/api/attendance", isAuthenticated, requirePermission("attendance.view"), async (req, res) => {
     try {
       const serviceDate = req.query.serviceDate as string;
       if (!serviceDate) {
@@ -615,7 +615,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/attendance/toggle", async (req, res) => {
+  app.post("/api/attendance/toggle", isAuthenticated, requirePermission("attendance.edit"), async (req, res) => {
     try {
       const { memberId, serviceDate, status } = req.body;
       const validatedData = insertAttendanceSchema.parse({ memberId, serviceDate, status });
@@ -631,7 +631,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/attendance/mark-all-present", async (req, res) => {
+  app.post("/api/attendance/mark-all-present", isAuthenticated, requirePermission("attendance.edit"), async (req, res) => {
     try {
       const { serviceDate, status } = req.body;
       if (!serviceDate || !status) {
@@ -645,7 +645,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/attendance/template", async (req, res) => {
+  app.get("/api/attendance/template", isAuthenticated, requirePermission("attendance.view"), async (req, res) => {
     try {
       const template = stringify(
         [
@@ -668,7 +668,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/attendance/import", upload.single("file"), async (req, res) => {
+  app.post("/api/attendance/import", isAuthenticated, requirePermission("attendance.edit"), upload.single("file"), async (req, res) => {
     try {
       if (!req.file) {
         return res.status(400).json({ error: "No file uploaded" });
@@ -715,7 +715,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Follow-up Tasks endpoints
-  app.get("/api/follow-up-tasks", async (req, res) => {
+  app.get("/api/follow-up-tasks", isAuthenticated, requirePermission("follow_up_tasks.view"), async (req, res) => {
     try {
       const { assignedTo, status, memberId } = req.query;
       const tasks = await storage.getFollowUpTasks({
@@ -730,7 +730,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/follow-up-tasks/:id", async (req, res) => {
+  app.get("/api/follow-up-tasks/:id", isAuthenticated, requirePermission("follow_up_tasks.view"), async (req, res) => {
     try {
       const task = await storage.getFollowUpTaskById(req.params.id);
       if (!task) {
@@ -743,7 +743,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/follow-up-tasks", async (req, res) => {
+  app.post("/api/follow-up-tasks", isAuthenticated, requirePermission("follow_up_tasks.manage"), async (req, res) => {
     try {
       const validatedData = insertFollowUpTaskSchema.parse(req.body);
       const task = await storage.createFollowUpTask(validatedData);
@@ -754,7 +754,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/follow-up-tasks/:id", async (req, res) => {
+  app.patch("/api/follow-up-tasks/:id", isAuthenticated, requirePermission("follow_up_tasks.manage"), async (req, res) => {
     try {
       const validatedData = insertFollowUpTaskSchema.partial().parse(req.body);
       const task = await storage.updateFollowUpTask(req.params.id, validatedData);
@@ -765,7 +765,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/follow-up-tasks/:id", async (req, res) => {
+  app.delete("/api/follow-up-tasks/:id", isAuthenticated, requirePermission("follow_up_tasks.manage"), async (req, res) => {
     try {
       await storage.deleteFollowUpTask(req.params.id);
       res.json({ success: true });
@@ -775,7 +775,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/follow-up-tasks/:id/complete", async (req, res) => {
+  app.post("/api/follow-up-tasks/:id/complete", isAuthenticated, requirePermission("follow_up_tasks.manage"), async (req, res) => {
     try {
       const task = await storage.completeFollowUpTask(req.params.id);
       res.json(task);
@@ -810,7 +810,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/clusters", isAuthenticated, requireRole("super_admin"), async (req, res) => {
+  app.post("/api/clusters", isAuthenticated, requirePermission("branches.manage"), async (req, res) => {
     try {
       const validatedData = insertClusterSchema.parse(req.body);
       const cluster = await storage.createCluster(validatedData);
@@ -821,7 +821,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/clusters/:id", isAuthenticated, requireRole("super_admin"), async (req, res) => {
+  app.patch("/api/clusters/:id", isAuthenticated, requirePermission("branches.manage"), async (req, res) => {
     try {
       const validatedData = insertClusterSchema.partial().parse(req.body);
       const cluster = await storage.updateCluster(req.params.id, validatedData);
@@ -832,7 +832,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/clusters/:id", isAuthenticated, requireRole("super_admin"), async (req, res) => {
+  app.delete("/api/clusters/:id", isAuthenticated, requirePermission("branches.manage"), async (req, res) => {
     try {
       await storage.deleteCluster(req.params.id);
       res.json({ success: true });
@@ -843,7 +843,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Cell routes
-  app.get("/api/cells", async (req, res) => {
+  app.get("/api/cells", isAuthenticated, requirePermission("cells.view"), async (req, res) => {
     try {
       const clusterId = req.query.clusterId as string | undefined;
       const cells = await storage.getCells(clusterId);
@@ -854,7 +854,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/cells/:id", async (req, res) => {
+  app.get("/api/cells/:id", isAuthenticated, requirePermission("cells.view"), async (req, res) => {
     try {
       const cell = await storage.getCellById(req.params.id);
       if (!cell) {
@@ -867,7 +867,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/cells", async (req, res) => {
+  app.post("/api/cells", isAuthenticated, requirePermission("cells.manage"), async (req, res) => {
     try {
       const validatedData = insertCellSchema.parse(req.body);
       const cell = await storage.createCell(validatedData);
@@ -878,7 +878,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/cells/:id", async (req, res) => {
+  app.patch("/api/cells/:id", isAuthenticated, requirePermission("cells.manage"), async (req, res) => {
     try {
       const validatedData = insertCellSchema.partial().parse(req.body);
       const cell = await storage.updateCell(req.params.id, validatedData);
@@ -889,7 +889,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/cells/:id", async (req, res) => {
+  app.delete("/api/cells/:id", isAuthenticated, requirePermission("cells.manage"), async (req, res) => {
     try {
       await storage.deleteCell(req.params.id);
       res.json({ success: true });
@@ -900,7 +900,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Cell attendance routes
-  app.get("/api/cells/:id/attendance", async (req, res) => {
+  app.get("/api/cells/:id/attendance", isAuthenticated, requirePermission("cells.view"), async (req, res) => {
     try {
       const meetingDate = req.query.meetingDate as string | undefined;
       const attendance = await storage.getCellAttendance(req.params.id, meetingDate);
@@ -911,7 +911,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/cells/:id/attendance", async (req, res) => {
+  app.post("/api/cells/:id/attendance", isAuthenticated, requirePermission("cells.manage"), async (req, res) => {
     try {
       const validatedData = insertCellAttendanceSchema.parse({
         ...req.body,
@@ -925,7 +925,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/cells/:id/meeting-dates", async (req, res) => {
+  app.get("/api/cells/:id/meeting-dates", isAuthenticated, requirePermission("cells.view"), async (req, res) => {
     try {
       const dates = await storage.getCellMeetingDates(req.params.id);
       res.json(dates);
@@ -935,7 +935,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/cell-attendance/:id", async (req, res) => {
+  app.delete("/api/cell-attendance/:id", isAuthenticated, requirePermission("cells.manage"), async (req, res) => {
     try {
       await storage.deleteCellAttendance(req.params.id);
       res.json({ success: true });
@@ -969,7 +969,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/branches", isAuthenticated, requireRole("super_admin"), async (req, res) => {
+  app.post("/api/branches", isAuthenticated, requirePermission("branches.manage"), async (req, res) => {
     try {
       const validatedData = insertBranchSchema.parse(req.body);
       const branch = await storage.createBranch(validatedData);
@@ -980,7 +980,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/branches/:id", isAuthenticated, requireRole("super_admin"), async (req, res) => {
+  app.patch("/api/branches/:id", isAuthenticated, requirePermission("branches.manage"), async (req, res) => {
     try {
       const validatedData = insertBranchSchema.partial().parse(req.body);
       const branch = await storage.updateBranch(req.params.id, validatedData);
@@ -991,7 +991,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/branches/:id", isAuthenticated, requireRole("super_admin"), async (req, res) => {
+  app.delete("/api/branches/:id", isAuthenticated, requirePermission("branches.manage"), async (req, res) => {
     try {
       await storage.deleteBranch(req.params.id);
       res.json({ success: true });
@@ -1002,7 +1002,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // User management routes (protected - requires authentication, mutations require super_admin)
-  app.get("/api/users", isAuthenticated, async (req, res) => {
+  app.get("/api/users", isAuthenticated, requirePermission("users.manage"), async (req, res) => {
     try {
       const users = await storage.getAllUsers();
       res.json(users);
@@ -1035,7 +1035,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/user-roles", isAuthenticated, requireRole("super_admin"), async (req, res) => {
+  app.post("/api/user-roles", isAuthenticated, requirePermission("users.manage"), async (req, res) => {
     try {
       const validatedData = insertUserRoleSchema.parse(req.body);
       const role = await storage.assignUserRole(validatedData);
@@ -1046,7 +1046,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/user-roles/:id", isAuthenticated, requireRole("super_admin"), async (req, res) => {
+  app.patch("/api/user-roles/:id", isAuthenticated, requirePermission("users.manage"), async (req, res) => {
     try {
       const validatedData = insertUserRoleSchema.partial().parse(req.body);
       const role = await storage.updateUserRole(req.params.id, validatedData);
@@ -1057,7 +1057,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/user-roles/:id", isAuthenticated, requireRole("super_admin"), async (req, res) => {
+  app.delete("/api/user-roles/:id", isAuthenticated, requirePermission("users.manage"), async (req, res) => {
     try {
       await storage.deleteUserRole(req.params.id);
       res.json({ success: true });
@@ -1351,10 +1351,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put("/api/role-permissions", isAuthenticated, requireRole("super_admin"), async (req, res) => {
+  app.put("/api/role-permissions", isAuthenticated, requirePermission("roles.manage"), async (req, res) => {
     try {
       const data = req.body as Record<string, string[]>;
       await storage.setRolePermissions(data);
+      invalidatePermissionsCache();
       res.json({ success: true });
     } catch (error) {
       console.error("Error saving role permissions:", error);

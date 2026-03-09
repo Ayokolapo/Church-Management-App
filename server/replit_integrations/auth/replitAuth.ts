@@ -249,3 +249,56 @@ export const requireRole = (...allowedRoles: UserRoleType[]): RequestHandler => 
     }
   };
 };
+
+// In-memory cache for role permissions to avoid a DB hit on every request
+let permissionsCache: { data: Record<string, string[]>; ts: number } | null = null;
+const PERM_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+export function invalidatePermissionsCache() {
+  permissionsCache = null;
+}
+
+async function getCachedPermissions(): Promise<Record<string, string[]>> {
+  const now = Date.now();
+  if (permissionsCache && now - permissionsCache.ts < PERM_CACHE_TTL) {
+    return permissionsCache.data;
+  }
+  const data = await storage.getRolePermissions();
+  permissionsCache = { data, ts: now };
+  return data;
+}
+
+export const requirePermission = (permission: string): RequestHandler => {
+  return async (req, res, next) => {
+    const user = req.user as any;
+
+    if (!req.isAuthenticated() || !user?.claims?.sub) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+      const userRole = await storage.getUserRole(user.claims.sub);
+
+      if (!userRole) {
+        return res.status(403).json({ message: "Forbidden: No role assigned" });
+      }
+
+      // super_admin always has full access
+      if (userRole.role === "super_admin") {
+        return next();
+      }
+
+      const rolePermissions = await getCachedPermissions();
+      const rolePerms = rolePermissions[userRole.role] ?? [];
+
+      if (!rolePerms.includes(permission)) {
+        return res.status(403).json({ message: `Forbidden: Missing permission '${permission}'` });
+      }
+
+      return next();
+    } catch (error) {
+      console.error("Error checking permissions:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  };
+};
