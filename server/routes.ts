@@ -786,7 +786,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Cluster routes (before cell routes to avoid id conflicts)
-  app.get("/api/clusters", isAuthenticated, async (req, res) => {
+  app.get("/api/clusters", isAuthenticated, requirePermission("cells.view"), async (req, res) => {
     try {
       const branchId = req.query.branchId as string | undefined;
       const clusterList = await storage.getClusters(branchId);
@@ -797,7 +797,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/clusters/:id", isAuthenticated, async (req, res) => {
+  app.get("/api/clusters/:id", isAuthenticated, requirePermission("cells.view"), async (req, res) => {
     try {
       const cluster = await storage.getClusterById(req.params.id);
       if (!cluster) {
