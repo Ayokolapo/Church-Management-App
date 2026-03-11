@@ -18,7 +18,8 @@ let pool: NeonPool | PgPool;
 
 if (process.env.DB_DRIVER === "pg") {
   // Standard PostgreSQL — Digital Ocean, Railway, etc.
-  pool = new PgPool({ connectionString });
+  // ssl.rejectUnauthorized: false accepts DO's self-signed CA certificate.
+  pool = new PgPool({ connectionString, ssl: { rejectUnauthorized: false } });
   db = pgDrizzle(pool as PgPool, { schema });
 } else {
   // Neon serverless (default for local dev)
