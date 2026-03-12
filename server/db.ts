@@ -1,10 +1,15 @@
 import { Pool as NeonPool, neonConfig } from '@neondatabase/serverless';
 import { drizzle as neonDrizzle } from 'drizzle-orm/neon-serverless';
-import pkg from 'pg';
-const { Pool: PgPool } = pkg;
 import { drizzle as pgDrizzle } from 'drizzle-orm/node-postgres';
+import type { Pool as PgPoolInstance } from 'pg';
+import { createRequire } from 'module';
 import ws from "ws";
 import * as schema from "@shared/schema";
+
+// pg is a CommonJS module — use createRequire so esbuild doesn't convert it to
+// a named ESM import (import { Pool } from 'pg') which Node ESM cannot resolve.
+const _require = createRequire(import.meta.url);
+const PgPool = (_require('pg') as typeof import('pg')).Pool;
 
 if (!process.env.DATABASE_URL) {
   throw new Error(
@@ -15,13 +20,13 @@ if (!process.env.DATABASE_URL) {
 const connectionString = process.env.DATABASE_URL;
 
 let db: ReturnType<typeof neonDrizzle> | ReturnType<typeof pgDrizzle>;
-let pool: NeonPool | PgPool;
+let pool: NeonPool | PgPoolInstance;
 
 if (process.env.DB_DRIVER === "pg") {
   // Standard PostgreSQL — Digital Ocean, Railway, etc.
   // ssl.rejectUnauthorized: false accepts DO's self-signed CA certificate.
   pool = new PgPool({ connectionString, ssl: { rejectUnauthorized: false } });
-  db = pgDrizzle(pool as PgPool, { schema });
+  db = pgDrizzle(pool as PgPoolInstance, { schema });
 } else {
   // Neon serverless (default for local dev)
   neonConfig.webSocketConstructor = ws;
