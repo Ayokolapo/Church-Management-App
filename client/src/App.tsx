@@ -41,12 +41,55 @@ function Router() {
   );
 }
 
+function PendingRolePage() {
+  return (
+    <div className="flex h-screen items-center justify-center bg-background">
+      <div className="flex flex-col items-center gap-6 max-w-md text-center px-6">
+        <div className="w-20 h-20 rounded-full bg-orange-100 flex items-center justify-center">
+          <svg
+            className="w-10 h-10 text-orange-500"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={1.5}
+              d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+            />
+          </svg>
+        </div>
+        <div className="space-y-2">
+          <h1 className="text-2xl font-semibold text-foreground">Account Pending</h1>
+          <p className="text-muted-foreground">
+            Your account has been created. An administrator will review your
+            registration and assign your role shortly.
+          </p>
+          <p className="text-sm text-muted-foreground">
+            Please check back later or contact your church administrator for
+            assistance.
+          </p>
+        </div>
+        <a
+          href="/api/logout"
+          className="text-sm text-orange-500 hover:text-orange-600 underline underline-offset-4"
+        >
+          Sign out
+        </a>
+      </div>
+    </div>
+  );
+}
+
 function AppShell() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, userRole, isRoleLoading } = useAuth();
   const style = {
     "--sidebar-width": "16rem",
     "--sidebar-width-icon": "3rem",
   };
+
+  const hasRole = !!userRole;
 
   // Public routes always rendered regardless of auth state
   return (
@@ -55,12 +98,14 @@ function AppShell() {
         <FirstTimerForm />
       </Route>
       <Route>
-        {isLoading ? (
+        {isLoading || (isAuthenticated && isRoleLoading) ? (
           <div className="flex h-screen items-center justify-center">
             <div className="w-8 h-8 border-4 border-orange-400 border-t-transparent rounded-full animate-spin" />
           </div>
         ) : !isAuthenticated ? (
           <AuthPage />
+        ) : !hasRole ? (
+          <PendingRolePage />
         ) : (
           <SidebarProvider style={style as React.CSSProperties}>
             <div className="flex h-screen w-full">
