@@ -154,7 +154,7 @@ export const insertMemberSchema = createInsertSchema(members, {
   mobilePhone: z.string().min(1, "Mobile phone is required"),
   gender: z.enum(['Male', 'Female']),
   occupation: z.enum(['Students', 'Workers', 'Unemployed', 'Self-Employed']),
-  status: z.enum(['Crowd', 'Potential', 'Committed', 'Worker', 'Leader']),
+  status: z.enum(['Crowd', 'Potential', 'Committed', 'Volunteer', 'Worker', 'Leader']),
   followUpType: z.enum(['General', 'Adhoc']).optional(),
   archive: z.enum(['Active', 'Relocated', 'Has a church', 'Wrong number', 'Unreachable', 'Not interested']).nullish(),
   branchId: z.string().min(1, "Branch is required").optional(),

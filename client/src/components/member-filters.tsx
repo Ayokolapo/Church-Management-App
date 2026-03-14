@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Select,
@@ -9,6 +10,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { X } from "lucide-react";
+import type { Cluster } from "@shared/schema";
 
 interface MemberFiltersProps {
   filters: {
@@ -21,6 +23,10 @@ interface MemberFiltersProps {
 }
 
 export function MemberFilters({ filters, onFiltersChange }: MemberFiltersProps) {
+  const { data: clusters } = useQuery<Cluster[]>({
+    queryKey: ["/api/clusters"],
+  });
+
   const clearFilters = () => {
     onFiltersChange({
       status: "",
@@ -55,6 +61,7 @@ export function MemberFilters({ filters, onFiltersChange }: MemberFiltersProps) 
                 <SelectItem value="Crowd">Crowd</SelectItem>
                 <SelectItem value="Potential">Potential</SelectItem>
                 <SelectItem value="Committed">Committed</SelectItem>
+                <SelectItem value="Volunteer">Volunteer</SelectItem>
                 <SelectItem value="Worker">Worker</SelectItem>
                 <SelectItem value="Leader">Leader</SelectItem>
               </SelectContent>
@@ -108,6 +115,11 @@ export function MemberFilters({ filters, onFiltersChange }: MemberFiltersProps) 
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="">All Clusters</SelectItem>
+                {clusters?.map((cluster) => (
+                  <SelectItem key={cluster.id} value={cluster.name}>
+                    {cluster.name}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>

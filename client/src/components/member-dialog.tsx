@@ -1,7 +1,7 @@
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { insertMemberSchema, type InsertMember, type MemberWithAttendanceStats, type Cell, type Branch } from "@shared/schema";
+import { insertMemberSchema, type InsertMember, type MemberWithAttendanceStats, type Cell, type Branch, type Cluster } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -113,6 +113,32 @@ export function MemberDialog({ member, open, onClose }: MemberDialogProps) {
         description: `Failed to ${isEdit ? "update" : "create"} member`,
         variant: "destructive",
       });
+    },
+  });
+
+  const selectedBranchId = useWatch({ control: form.control, name: "branchId" });
+
+  const { data: clusters } = useQuery<Cluster[]>({
+    queryKey: ["/api/clusters", selectedBranchId],
+    queryFn: async () => {
+      const url = selectedBranchId
+        ? `/api/clusters?branchId=${selectedBranchId}`
+        : "/api/clusters";
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!selectedBranchId,
+  });
+
+  const { data: followUpWorkerOptions } = useQuery<MemberWithAttendanceStats[]>({
+    queryKey: ["/api/members", "follow-up-workers"],
+    queryFn: async () => {
+      const res = await fetch("/api/members?statuses=Volunteer,Worker,Leader", {
+        credentials: "include",
+      });
+      if (!res.ok) return [];
+      return res.json();
     },
   });
 
@@ -313,9 +339,28 @@ export function MemberDialog({ member, open, onClose }: MemberDialogProps) {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Cluster *</FormLabel>
-                    <FormControl>
-                      <Input {...field} placeholder="e.g., Lekki, VI" data-testid="input-cluster" />
-                    </FormControl>
+                    <Select
+                      onValueChange={field.onChange}
+                      value={field.value}
+                      disabled={!selectedBranchId}
+                    >
+                      <FormControl>
+                        <SelectTrigger data-testid="select-cluster">
+                          <SelectValue
+                            placeholder={
+                              selectedBranchId ? "Select cluster" : "Select a branch first"
+                            }
+                          />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {clusters?.map((cluster) => (
+                          <SelectItem key={cluster.id} value={cluster.name}>
+                            {cluster.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -365,6 +410,7 @@ export function MemberDialog({ member, open, onClose }: MemberDialogProps) {
                         <SelectItem value="Crowd">Crowd</SelectItem>
                         <SelectItem value="Potential">Potential</SelectItem>
                         <SelectItem value="Committed">Committed</SelectItem>
+                        <SelectItem value="Volunteer">Volunteer</SelectItem>
                         <SelectItem value="Worker">Worker</SelectItem>
                         <SelectItem value="Leader">Leader</SelectItem>
                       </SelectContent>
@@ -380,9 +426,27 @@ export function MemberDialog({ member, open, onClose }: MemberDialogProps) {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Follow Up Worker</FormLabel>
-                    <FormControl>
-                      <Input {...field} data-testid="input-follow-up-worker" />
-                    </FormControl>
+                    <Select
+                      onValueChange={(val) => field.onChange(val === "none" ? "" : val)}
+                      value={field.value || "none"}
+                    >
+                      <FormControl>
+                        <SelectTrigger data-testid="select-follow-up-worker">
+                          <SelectValue placeholder="Select worker (optional)" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="none">None</SelectItem>
+                        {followUpWorkerOptions?.map((m) => {
+                          const fullName = `${m.firstName} ${m.lastName}`;
+                          return (
+                            <SelectItem key={m.id} value={fullName}>
+                              {fullName} ({m.status})
+                            </SelectItem>
+                          );
+                        })}
+                      </SelectContent>
+                    </Select>
                     <FormMessage />
                   </FormItem>
                 )}

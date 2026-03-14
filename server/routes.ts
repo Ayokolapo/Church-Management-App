@@ -206,8 +206,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Member routes
   app.get("/api/members", isAuthenticated, requirePermission("members.view"), async (req, res) => {
     try {
+      const statusesParam = req.query.statuses as string | undefined;
       const filters = {
         status: req.query.status as string,
+        statuses: statusesParam ? statusesParam.split(',').filter(Boolean) : undefined,
         gender: req.query.gender as string,
         occupation: req.query.occupation as string,
         cluster: req.query.cluster as string,

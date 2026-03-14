@@ -56,6 +56,8 @@ export function MemberTable({ members, onEdit, visibleColumns }: MemberTableProp
         return "default";
       case "Worker":
         return "secondary";
+      case "Volunteer":
+        return "secondary";
       case "Committed":
         return "outline";
       default:

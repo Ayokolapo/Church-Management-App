@@ -44,7 +44,7 @@ import {
   type OutreachWithMemberStatus,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, sql, desc } from "drizzle-orm";
+import { eq, and, sql, desc, inArray } from "drizzle-orm";
 
 export interface IStorage {
   // Members
@@ -181,12 +181,15 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
 export class DatabaseStorage implements IStorage {
   async getMembers(filters?: {
     status?: string;
+    statuses?: string[];
     gender?: string;
     occupation?: string;
     cluster?: string;
   }): Promise<MemberWithAttendanceStats[]> {
     const conditions = [];
-    if (filters?.status) {
+    if (filters?.statuses && filters.statuses.length > 0) {
+      conditions.push(inArray(members.status, filters.statuses));
+    } else if (filters?.status) {
       conditions.push(eq(members.status, filters.status));
     }
     if (filters?.gender) {
