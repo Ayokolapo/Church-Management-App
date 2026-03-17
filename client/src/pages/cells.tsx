@@ -16,7 +16,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { format } from "date-fns";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import type { CellWithMembers, MemberWithAttendanceStats, CellAttendanceWithMember, ClusterWithCells, UserWithRole } from "@shared/schema";
+import type { CellWithMembers, MemberSlim, CellAttendanceWithMember, ClusterWithCells, UserWithRole } from "@shared/schema";
 
 const cellFormSchema = z.object({
   name: z.string().min(1, "Cell name is required"),
@@ -50,8 +50,8 @@ export default function Cells() {
     queryKey: ["/api/users"],
   });
 
-  const { data: allMembers } = useQuery<MemberWithAttendanceStats[]>({
-    queryKey: ["/api/members"],
+  const { data: allMembers } = useQuery<MemberSlim[]>({
+    queryKey: ["/api/members/list"],
   });
 
   const { data: cellAttendance } = useQuery<CellAttendanceWithMember[]>({
