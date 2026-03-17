@@ -1,22 +1,34 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Download, Upload, ExternalLink, UserCheck } from "lucide-react";
+import { Download, Upload, ExternalLink, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { FirstTimerTable } from "@/components/first-timer-table";
 import { ImportDialog } from "@/components/import-dialog";
-import type { FirstTimer } from "@shared/schema";
+import type { FirstTimer, PaginatedResult } from "@shared/schema";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
+const PAGE_LIMIT = 50;
+
 export default function FirstTimers() {
   const [showImportDialog, setShowImportDialog] = useState(false);
+  const [page, setPage] = useState(1);
   const { toast } = useToast();
 
-  const { data: firstTimers, isLoading } = useQuery<FirstTimer[]>({
-    queryKey: ["/api/first-timers"],
+  const { data: result, isLoading } = useQuery<PaginatedResult<FirstTimer>>({
+    queryKey: ["/api/first-timers", page],
+    queryFn: async () => {
+      const res = await fetch(`/api/first-timers?page=${page}&limit=${PAGE_LIMIT}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch first timers");
+      return res.json();
+    },
   });
+
+  const firstTimers = result?.data ?? [];
+  const totalPages = result?.totalPages ?? 1;
+  const total = result?.total ?? 0;
 
   const convertMutation = useMutation({
     mutationFn: async (firstTimerId: string) => {
@@ -24,7 +36,7 @@ export default function FirstTimers() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/first-timers"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/members"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/members/list"] });
       toast({
         title: "Success",
         description: "First timer converted to member successfully",
@@ -129,10 +141,40 @@ export default function FirstTimers() {
         </div>
       ) : (
         <FirstTimerTable
-          firstTimers={firstTimers || []}
+          firstTimers={firstTimers}
           onConvert={handleConvert}
           isConverting={convertMutation.isPending}
         />
+      )}
+
+      {/* Pagination */}
+      {!isLoading && totalPages > 1 && (
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-muted-foreground">
+            Showing {((page - 1) * PAGE_LIMIT) + 1}–{Math.min(page * PAGE_LIMIT, total)} of {total} first timers
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={page === 1}
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Previous
+            </Button>
+            <span className="text-sm">Page {page} of {totalPages}</span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+              disabled={page === totalPages}
+            >
+              Next
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
       )}
 
       {showImportDialog && (

@@ -207,25 +207,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/members", isAuthenticated, requirePermission("members.view"), async (req, res) => {
     try {
       const statusesParam = req.query.statuses as string | undefined;
+      const page = req.query.page ? parseInt(req.query.page as string, 10) : 1;
+      const limit = req.query.limit ? Math.min(parseInt(req.query.limit as string, 10), 200) : 50;
       const filters = {
         status: req.query.status as string,
         statuses: statusesParam ? statusesParam.split(',').filter(Boolean) : undefined,
         gender: req.query.gender as string,
         occupation: req.query.occupation as string,
         cluster: req.query.cluster as string,
+        search: req.query.search as string | undefined,
+        page,
+        limit,
       };
-      const members = await storage.getMembers(filters);
-      res.json(members);
+      const result = await storage.getMembers(filters);
+      res.json(result);
     } catch (error) {
       console.error("Error fetching members:", error);
       res.status(500).json({ error: "Failed to fetch members" });
     }
   });
 
+  // Slim member list for dropdowns and attendance (no expensive attendance subqueries)
+  app.get("/api/members/list", isAuthenticated, requirePermission("members.view"), async (req, res) => {
+    try {
+      const membersList = await storage.getMembersList();
+      res.json(membersList);
+    } catch (error) {
+      console.error("Error fetching members list:", error);
+      res.status(500).json({ error: "Failed to fetch members list" });
+    }
+  });
+
   // CSV routes must come before :id route to prevent "export", "template", "import" from being matched as IDs
   app.get("/api/members/export", isAuthenticated, requirePermission("members.view"), async (req, res) => {
     try {
-      const members = await storage.getMembers();
+      const result = await storage.getMembers({ page: 1, limit: 100000 });
+      const members = result.data;
       const csvData = stringify(members, {
         header: true,
         columns: [
@@ -454,8 +471,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // First Timer routes
   app.get("/api/first-timers", isAuthenticated, requirePermission("first_timers.view"), async (req, res) => {
     try {
-      const firstTimers = await storage.getFirstTimers();
-      res.json(firstTimers);
+      const page = req.query.page ? parseInt(req.query.page as string, 10) : 1;
+      const limit = req.query.limit ? Math.min(parseInt(req.query.limit as string, 10), 200) : 50;
+      const result = await storage.getFirstTimers({ page, limit });
+      res.json(result);
     } catch (error) {
       console.error("Error fetching first timers:", error);
       res.status(500).json({ error: "Failed to fetch first timers" });
@@ -489,7 +508,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/first-timers/export", isAuthenticated, requirePermission("first_timers.view"), async (req, res) => {
     try {
-      const firstTimers = await storage.getFirstTimers();
+      const { data: firstTimers } = await storage.getFirstTimers({ page: 1, limit: 100000 });
       const csvData = stringify(firstTimers, {
         header: true,
         columns: [
@@ -682,6 +701,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         skip_empty_lines: true,
       });
 
+      // Load all members once before iterating CSV rows
+      const allMembers = await storage.getMembersList();
+
       let imported = 0;
       for (const record of records as Record<string, string>[]) {
         try {
@@ -692,8 +714,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const status = record["Status"] || record.status || "Present";
 
           // Find member by name and phone
-          const members = await storage.getMembers();
-          const member = members.find(
+          const member = allMembers.find(
             (m) =>
               m.firstName === firstName &&
               m.lastName === lastName &&
@@ -720,12 +741,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/follow-up-tasks", isAuthenticated, requirePermission("follow_up_tasks.view"), async (req, res) => {
     try {
       const { assignedTo, status, memberId } = req.query;
-      const tasks = await storage.getFollowUpTasks({
+      const page = req.query.page ? parseInt(req.query.page as string, 10) : 1;
+      const limit = req.query.limit ? Math.min(parseInt(req.query.limit as string, 10), 200) : 25;
+      const result = await storage.getFollowUpTasks({
         assignedTo: assignedTo as string,
         status: status as string,
         memberId: memberId as string,
+        page,
+        limit,
       });
-      res.json(tasks);
+      res.json(result);
     } catch (error) {
       console.error("Error fetching follow-up tasks:", error);
       res.status(500).json({ error: "Failed to fetch follow-up tasks" });
@@ -1369,8 +1394,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/outreach", isAuthenticated, async (req, res) => {
     try {
       const branchId = req.query.branchId as string | undefined;
-      const records = await storage.getOutreach(branchId);
-      res.json(records);
+      const page = req.query.page ? parseInt(req.query.page as string, 10) : 1;
+      const limit = req.query.limit ? Math.min(parseInt(req.query.limit as string, 10), 200) : 50;
+      const result = await storage.getOutreach({ branchId, page, limit });
+      res.json(result);
     } catch (error) {
       console.error("Error fetching outreach:", error);
       res.status(500).json({ error: "Failed to fetch outreach records" });

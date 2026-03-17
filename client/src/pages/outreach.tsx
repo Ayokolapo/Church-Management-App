@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Plus, Search, Pencil, Trash2, Users } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, Users, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -49,18 +49,30 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { insertOutreachSchema, type InsertOutreach, type OutreachWithMemberStatus, type Cluster } from "@shared/schema";
+import { insertOutreachSchema, type InsertOutreach, type OutreachWithMemberStatus, type Cluster, type PaginatedResult } from "@shared/schema";
+
+const PAGE_LIMIT = 50;
 
 export default function Outreach() {
   const { toast } = useToast();
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
   const [showDialog, setShowDialog] = useState(false);
   const [editRecord, setEditRecord] = useState<OutreachWithMemberStatus | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
-  const { data: records = [], isLoading } = useQuery<OutreachWithMemberStatus[]>({
-    queryKey: ["/api/outreach"],
+  const { data: result, isLoading } = useQuery<PaginatedResult<OutreachWithMemberStatus>>({
+    queryKey: ["/api/outreach", page],
+    queryFn: async () => {
+      const res = await fetch(`/api/outreach?page=${page}&limit=${PAGE_LIMIT}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch outreach");
+      return res.json();
+    },
   });
+
+  const records = result?.data ?? [];
+  const totalPages = result?.totalPages ?? 1;
+  const total = result?.total ?? 0;
 
   const { data: clusters = [] } = useQuery<Cluster[]>({
     queryKey: ["/api/clusters"],
@@ -108,7 +120,7 @@ export default function Outreach() {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/outreach"] });
+      queryClient.invalidateQueries({ predicate: (q) => typeof q.queryKey[0] === "string" && q.queryKey[0] === "/api/outreach" });
       setShowDialog(false);
       toast({ title: editRecord ? "Record updated" : "Record added" });
     },
@@ -122,7 +134,7 @@ export default function Outreach() {
       await apiRequest("DELETE", `/api/outreach/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/outreach"] });
+      queryClient.invalidateQueries({ predicate: (q) => typeof q.queryKey[0] === "string" && q.queryKey[0] === "/api/outreach" });
       setDeleteId(null);
       toast({ title: "Record deleted" });
     },
@@ -225,6 +237,36 @@ export default function Outreach() {
           </TableBody>
         </Table>
       </div>
+
+      {/* Pagination */}
+      {!isLoading && totalPages > 1 && (
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-muted-foreground">
+            Showing {((page - 1) * PAGE_LIMIT) + 1}–{Math.min(page * PAGE_LIMIT, total)} of {total} records
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={page === 1}
+            >
+              <ChevronLeft className="w-4 h-4" />
+              Previous
+            </Button>
+            <span className="text-sm">Page {page} of {totalPages}</span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+              disabled={page === totalPages}
+            >
+              Next
+              <ChevronRight className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Add / Edit Dialog */}
       <Dialog open={showDialog} onOpenChange={setShowDialog}>

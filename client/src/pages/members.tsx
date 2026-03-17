@@ -1,6 +1,6 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Plus, Download, Upload, Filter, Columns, Search, GitMerge } from "lucide-react";
+import { Plus, Download, Upload, Filter, Columns, Search, GitMerge, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MemberTable } from "@/components/member-table";
@@ -9,8 +9,10 @@ import { ImportDialog } from "@/components/import-dialog";
 import { MergeDuplicatesDialog } from "@/components/merge-duplicates-dialog";
 import { ColumnVisibilityDialog, DEFAULT_VISIBLE_COLUMNS } from "@/components/column-visibility-dialog";
 import { MemberFilters } from "@/components/member-filters";
-import type { MemberWithAttendanceStats } from "@shared/schema";
+import type { MemberWithAttendanceStats, PaginatedResult } from "@shared/schema";
 import { Skeleton } from "@/components/ui/skeleton";
+
+const PAGE_LIMIT = 50;
 
 export default function Members() {
   const [showMemberDialog, setShowMemberDialog] = useState(false);
@@ -18,7 +20,9 @@ export default function Members() {
   const [showColumnDialog, setShowColumnDialog] = useState(false);
   const [showMergeDialog, setShowMergeDialog] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [searchInput, setSearchInput] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+  const [page, setPage] = useState(1);
   const [selectedMember, setSelectedMember] = useState<MemberWithAttendanceStats | null>(null);
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(
     () => new Set(DEFAULT_VISIBLE_COLUMNS)
@@ -29,6 +33,22 @@ export default function Members() {
     occupation: "",
     cluster: "",
   });
+
+  // Debounce search input
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleSearchChange = (value: string) => {
+    setSearchInput(value);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setSearchTerm(value);
+      setPage(1);
+    }, 300);
+  };
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setPage(1);
+  }, [filters.status, filters.gender, filters.occupation, filters.cluster]);
 
   const handleToggleColumn = useCallback((columnId: string) => {
     setVisibleColumns((prev) => {
@@ -42,13 +62,15 @@ export default function Members() {
     });
   }, []);
 
-  const { data: allMembers, isLoading } = useQuery<MemberWithAttendanceStats[]>({
+  const { data: result, isLoading } = useQuery<PaginatedResult<MemberWithAttendanceStats>>({
     queryKey: [
       "/api/members",
       filters.status,
       filters.gender,
       filters.occupation,
       filters.cluster,
+      searchTerm,
+      page,
     ],
     queryFn: async () => {
       const params = new URLSearchParams();
@@ -56,25 +78,18 @@ export default function Members() {
       if (filters.gender) params.append("gender", filters.gender);
       if (filters.occupation) params.append("occupation", filters.occupation);
       if (filters.cluster) params.append("cluster", filters.cluster);
-      
-      const url = `/api/members${params.toString() ? `?${params.toString()}` : ""}`;
-      const res = await fetch(url);
+      if (searchTerm) params.append("search", searchTerm);
+      params.append("page", String(page));
+      params.append("limit", String(PAGE_LIMIT));
+      const res = await fetch(`/api/members?${params.toString()}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch members");
       return res.json();
     },
   });
 
-  // Client-side search filtering
-  const members = allMembers?.filter((member) => {
-    if (!searchTerm) return true;
-    const search = searchTerm.toLowerCase();
-    return (
-      member.firstName.toLowerCase().includes(search) ||
-      member.lastName.toLowerCase().includes(search) ||
-      member.mobilePhone.includes(search) ||
-      member.email?.toLowerCase().includes(search)
-    );
-  });
+  const members = result?.data ?? [];
+  const totalPages = result?.totalPages ?? 1;
+  const total = result?.total ?? 0;
 
   const handleEdit = (member: MemberWithAttendanceStats) => {
     setSelectedMember(member);
@@ -150,8 +165,8 @@ export default function Members() {
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Search by name, phone, or email..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            value={searchInput}
+            onChange={(e) => handleSearchChange(e.target.value)}
             className="pl-10"
             data-testid="input-search"
           />
@@ -188,7 +203,37 @@ export default function Members() {
           <Skeleton className="h-96 w-full" />
         </div>
       ) : (
-        <MemberTable members={members || []} onEdit={handleEdit} visibleColumns={visibleColumns} />
+        <MemberTable members={members} onEdit={handleEdit} visibleColumns={visibleColumns} />
+      )}
+
+      {/* Pagination */}
+      {!isLoading && totalPages > 1 && (
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-muted-foreground">
+            Showing {((page - 1) * PAGE_LIMIT) + 1}–{Math.min(page * PAGE_LIMIT, total)} of {total} members
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={page === 1}
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Previous
+            </Button>
+            <span className="text-sm">Page {page} of {totalPages}</span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+              disabled={page === totalPages}
+            >
+              Next
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
       )}
 
       {showMemberDialog && (

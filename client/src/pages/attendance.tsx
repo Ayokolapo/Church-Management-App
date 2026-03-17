@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AttendanceList } from "@/components/attendance-list";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import type { MemberWithAttendanceStats } from "@shared/schema";
+import type { MemberSlim } from "@shared/schema";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -18,8 +18,8 @@ export default function Attendance() {
   const [searchTerm, setSearchTerm] = useState("");
   const { toast } = useToast();
 
-  const { data: members, isLoading } = useQuery<MemberWithAttendanceStats[]>({
-    queryKey: ["/api/members"],
+  const { data: members, isLoading } = useQuery<MemberSlim[]>({
+    queryKey: ["/api/members/list"],
   });
 
   const { data: attendanceData } = useQuery<Record<string, string>>({
@@ -41,7 +41,6 @@ export default function Attendance() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/attendance", serviceDate] });
-      queryClient.invalidateQueries({ queryKey: ["/api/members"] });
     },
     onError: () => {
       toast({
@@ -61,7 +60,6 @@ export default function Attendance() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/attendance", serviceDate] });
-      queryClient.invalidateQueries({ queryKey: ["/api/members"] });
       toast({
         title: "Success",
         description: "All members marked as present",

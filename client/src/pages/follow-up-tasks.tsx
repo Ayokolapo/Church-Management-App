@@ -11,10 +11,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { insertFollowUpTaskSchema, type FollowUpTaskWithMember, type MemberWithAttendanceStats } from "@shared/schema";
+import { insertFollowUpTaskSchema, type FollowUpTaskWithMember, type MemberSlim, type PaginatedResult } from "@shared/schema";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
-import { CheckCircle2, Circle, Clock, Edit, Plus, Trash2, XCircle } from "lucide-react";
+import { CheckCircle2, Circle, Clock, Edit, Plus, Trash2, XCircle, ChevronLeft, ChevronRight } from "lucide-react";
 import { format } from "date-fns";
 import { Badge } from "@/components/ui/badge";
 
@@ -22,12 +22,15 @@ const formSchema = insertFollowUpTaskSchema.extend({
   dueDate: z.string().min(1, "Due date is required"),
 });
 
+const PAGE_LIMIT = 25;
+
 export default function FollowUpTasks() {
   const { toast } = useToast();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<FollowUpTaskWithMember | null>(null);
   const [statusFilter, setStatusFilter] = useState("all");
   const [assignedToFilter, setAssignedToFilter] = useState("");
+  const [page, setPage] = useState(1);
 
   const queryParams = new URLSearchParams();
   if (statusFilter !== "all" && statusFilter) {
@@ -36,15 +39,21 @@ export default function FollowUpTasks() {
   if (assignedToFilter) {
     queryParams.set("assignedTo", assignedToFilter);
   }
+  queryParams.set("page", String(page));
+  queryParams.set("limit", String(PAGE_LIMIT));
   const queryString = queryParams.toString();
-  const tasksUrl = `/api/follow-up-tasks${queryString ? `?${queryString}` : ""}`;
+  const tasksUrl = `/api/follow-up-tasks?${queryString}`;
 
-  const { data: tasks, isLoading } = useQuery<FollowUpTaskWithMember[]>({
+  const { data: result, isLoading } = useQuery<PaginatedResult<FollowUpTaskWithMember>>({
     queryKey: [tasksUrl],
   });
 
-  const { data: members } = useQuery<MemberWithAttendanceStats[]>({
-    queryKey: ["/api/members"],
+  const tasks = result?.data ?? [];
+  const totalPages = result?.totalPages ?? 1;
+  const total = result?.total ?? 0;
+
+  const { data: members } = useQuery<MemberSlim[]>({
+    queryKey: ["/api/members/list"],
   });
 
   const form = useForm<z.infer<typeof formSchema>>({
@@ -402,7 +411,7 @@ export default function FollowUpTasks() {
         <CardContent className="grid grid-cols-2 gap-4">
           <div>
             <Label htmlFor="status-filter">Status</Label>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1); }}>
               <SelectTrigger id="status-filter" data-testid="select-status-filter">
                 <SelectValue placeholder="All statuses" />
               </SelectTrigger>
@@ -422,7 +431,7 @@ export default function FollowUpTasks() {
               id="assigned-to-filter"
               placeholder="Filter by worker"
               value={assignedToFilter}
-              onChange={(e) => setAssignedToFilter(e.target.value)}
+              onChange={(e) => { setAssignedToFilter(e.target.value); setPage(1); }}
               data-testid="input-assigned-to-filter"
             />
           </div>
@@ -436,14 +445,14 @@ export default function FollowUpTasks() {
               <p className="text-muted-foreground">Loading tasks...</p>
             </CardContent>
           </Card>
-        ) : tasks?.length === 0 ? (
+        ) : tasks.length === 0 ? (
           <Card>
             <CardContent className="p-6">
               <p className="text-muted-foreground">No tasks found</p>
             </CardContent>
           </Card>
         ) : (
-          tasks?.map((task) => (
+          tasks.map((task) => (
             <Card key={task.id} className={isOverdue(task.dueDate, task.status) ? "border-red-500" : ""}>
               <CardContent className="p-6">
                 <div className="flex justify-between items-start">
@@ -521,6 +530,36 @@ export default function FollowUpTasks() {
           ))
         )}
       </div>
+
+      {/* Pagination */}
+      {!isLoading && totalPages > 1 && (
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-muted-foreground">
+            Showing {((page - 1) * PAGE_LIMIT) + 1}–{Math.min(page * PAGE_LIMIT, total)} of {total} tasks
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={page === 1}
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Previous
+            </Button>
+            <span className="text-sm">Page {page} of {totalPages}</span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+              disabled={page === totalPages}
+            >
+              Next
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

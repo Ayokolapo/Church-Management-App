@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, date, integer } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, date, integer, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -27,7 +27,11 @@ export const members = pgTable("members", {
   branchId: varchar("branch_id").references(() => branches.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (t) => ({
+  statusIdx: index("members_status_idx").on(t.status),
+  clusterIdx: index("members_cluster_idx").on(t.cluster),
+  branchIdIdx: index("members_branch_id_idx").on(t.branchId),
+}));
 
 export const firstTimers = pgTable("first_timers", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -57,7 +61,10 @@ export const attendance = pgTable("attendance", {
   serviceDate: date("service_date").notNull(),
   status: text("status").notNull().default('Absent'),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (t) => ({
+  memberIdStatusIdx: index("attendance_member_id_status_idx").on(t.memberId, t.status),
+  serviceDateIdx: index("attendance_service_date_idx").on(t.serviceDate),
+}));
 
 export const communications = pgTable("communications", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -82,7 +89,12 @@ export const followUpTasks = pgTable("follow_up_tasks", {
   completedAt: timestamp("completed_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (t) => ({
+  statusIdx: index("follow_up_tasks_status_idx").on(t.status),
+  assignedToIdx: index("follow_up_tasks_assigned_to_idx").on(t.assignedTo),
+  memberIdIdx: index("follow_up_tasks_member_id_idx").on(t.memberId),
+  dueDateIdx: index("follow_up_tasks_due_date_idx").on(t.dueDate),
+}));
 
 export const clusters = pgTable("clusters", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -147,7 +159,9 @@ export const userRoles = pgTable("user_roles", {
   cellId: varchar("cell_id").references(() => cells.id, { onDelete: 'cascade' }), // for cell_leader
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (t) => ({
+  userIdIdx: index("user_roles_user_id_idx").on(t.userId),
+}));
 
 export const insertMemberSchema = createInsertSchema(members, {
   email: z.string().email().optional().or(z.literal('')),
@@ -342,3 +356,15 @@ export type UserWithRole = {
   role: UserRole | null;
   branch: Branch | null;
 };
+
+// Pagination types
+export interface PaginatedResult<T> {
+  data: T[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+// Slim member type for dropdowns and attendance (no expensive attendance subqueries)
+export type MemberSlim = Pick<Member, 'id' | 'firstName' | 'lastName' | 'mobilePhone' | 'email' | 'status' | 'cluster'>;

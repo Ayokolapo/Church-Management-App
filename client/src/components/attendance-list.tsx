@@ -1,10 +1,10 @@
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import type { MemberWithAttendanceStats } from "@shared/schema";
+import type { MemberSlim } from "@shared/schema";
 
 interface AttendanceListProps {
-  members: MemberWithAttendanceStats[];
+  members: MemberSlim[];
   attendanceData: Record<string, string>;
   onToggle: (memberId: string, currentStatus: string) => void;
   isUpdating: boolean;

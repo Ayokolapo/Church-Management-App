@@ -42,13 +42,16 @@ import {
   type Outreach,
   type InsertOutreach,
   type OutreachWithMemberStatus,
+  type PaginatedResult,
+  type MemberSlim,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, sql, desc, inArray } from "drizzle-orm";
+import { eq, and, sql, desc, inArray, asc } from "drizzle-orm";
 
 export interface IStorage {
   // Members
-  getMembers(filters?: { status?: string; gender?: string; occupation?: string; cluster?: string }): Promise<MemberWithAttendanceStats[]>;
+  getMembers(filters?: { status?: string; statuses?: string[]; gender?: string; occupation?: string; cluster?: string; search?: string; page?: number; limit?: number }): Promise<PaginatedResult<MemberWithAttendanceStats>>;
+  getMembersList(): Promise<MemberSlim[]>;
   getMemberById(id: string): Promise<Member | undefined>;
   createMember(member: InsertMember): Promise<Member>;
   updateMember(id: string, member: Partial<InsertMember>): Promise<Member>;
@@ -57,7 +60,7 @@ export interface IStorage {
   mergeMembers(primaryId: string, duplicateIds: string[]): Promise<Member>;
 
   // First Timers
-  getFirstTimers(): Promise<FirstTimer[]>;
+  getFirstTimers(params?: { page?: number; limit?: number }): Promise<PaginatedResult<FirstTimer>>;
   getFirstTimerById(id: string): Promise<FirstTimer | undefined>;
   createFirstTimer(firstTimer: InsertFirstTimer): Promise<FirstTimer>;
   convertFirstTimerToMember(id: string): Promise<Member>;
@@ -89,7 +92,7 @@ export interface IStorage {
   getCommunications(): Promise<Communication[]>;
   
   // Follow-up Tasks
-  getFollowUpTasks(filters?: { assignedTo?: string; status?: string; memberId?: string }): Promise<FollowUpTaskWithMember[]>;
+  getFollowUpTasks(filters?: { assignedTo?: string; status?: string; memberId?: string; page?: number; limit?: number }): Promise<PaginatedResult<FollowUpTaskWithMember>>;
   getFollowUpTaskById(id: string): Promise<FollowUpTaskWithMember | undefined>;
   createFollowUpTask(task: InsertFollowUpTask): Promise<FollowUpTask>;
   updateFollowUpTask(id: string, task: Partial<InsertFollowUpTask>): Promise<FollowUpTask>;
@@ -137,7 +140,7 @@ export interface IStorage {
   deleteUserRole(id: string): Promise<void>;
   
   // Outreach
-  getOutreach(branchId?: string): Promise<OutreachWithMemberStatus[]>;
+  getOutreach(params?: { branchId?: string; page?: number; limit?: number }): Promise<PaginatedResult<OutreachWithMemberStatus>>;
   getOutreachById(id: string): Promise<Outreach | undefined>;
   createOutreach(data: InsertOutreach): Promise<Outreach>;
   updateOutreach(id: string, data: Partial<InsertOutreach>): Promise<Outreach>;
@@ -185,7 +188,14 @@ export class DatabaseStorage implements IStorage {
     gender?: string;
     occupation?: string;
     cluster?: string;
-  }): Promise<MemberWithAttendanceStats[]> {
+    search?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<PaginatedResult<MemberWithAttendanceStats>> {
+    const page = filters?.page ?? 1;
+    const limit = filters?.limit ?? 50;
+    const offset = (page - 1) * limit;
+
     const conditions = [];
     if (filters?.statuses && filters.statuses.length > 0) {
       conditions.push(inArray(members.status, filters.statuses));
@@ -201,6 +211,17 @@ export class DatabaseStorage implements IStorage {
     if (filters?.cluster) {
       conditions.push(eq(members.cluster, filters.cluster));
     }
+    if (filters?.search) {
+      const term = `%${filters.search}%`;
+      conditions.push(sql`(${members.firstName} ILIKE ${term} OR ${members.lastName} ILIKE ${term} OR ${members.mobilePhone} ILIKE ${term})`);
+    }
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const [{ total }] = await db
+      .select({ total: sql<number>`COUNT(*)::int` })
+      .from(members)
+      .where(whereClause);
 
     let query = db
       .select({
@@ -225,31 +246,50 @@ export class DatabaseStorage implements IStorage {
         createdAt: members.createdAt,
         updatedAt: members.updatedAt,
         lastAttended: sql<string | null>`(
-          SELECT MAX(service_date)::text 
-          FROM ${attendance} 
-          WHERE ${attendance.memberId} = ${members.id} 
+          SELECT MAX(service_date)::text
+          FROM ${attendance}
+          WHERE ${attendance.memberId} = ${members.id}
           AND ${attendance.status} = 'Present'
         )`,
         timesAttended: sql<number>`(
-          SELECT COUNT(*)::int 
-          FROM ${attendance} 
-          WHERE ${attendance.memberId} = ${members.id} 
+          SELECT COUNT(*)::int
+          FROM ${attendance}
+          WHERE ${attendance.memberId} = ${members.id}
           AND ${attendance.status} = 'Present'
         )`,
         timeSinceAttended: sql<number | null>`(
-          SELECT EXTRACT(DAY FROM NOW() - MAX(service_date))::int 
-          FROM ${attendance} 
-          WHERE ${attendance.memberId} = ${members.id} 
+          SELECT EXTRACT(DAY FROM NOW() - MAX(service_date))::int
+          FROM ${attendance}
+          WHERE ${attendance.memberId} = ${members.id}
           AND ${attendance.status} = 'Present'
         )`,
       })
-      .from(members);
+      .from(members)
+      .orderBy(asc(members.firstName), asc(members.lastName))
+      .limit(limit)
+      .offset(offset);
 
-    if (conditions.length > 0) {
-      query = query.where(and(...conditions)) as any;
+    if (whereClause) {
+      query = query.where(whereClause) as any;
     }
 
-    return await query;
+    const data = await query;
+    return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
+  }
+
+  async getMembersList(): Promise<MemberSlim[]> {
+    return await db
+      .select({
+        id: members.id,
+        firstName: members.firstName,
+        lastName: members.lastName,
+        mobilePhone: members.mobilePhone,
+        email: members.email,
+        status: members.status,
+        cluster: members.cluster,
+      })
+      .from(members)
+      .orderBy(asc(members.firstName), asc(members.lastName));
   }
 
   async getMemberById(id: string): Promise<Member | undefined> {
@@ -397,8 +437,21 @@ export class DatabaseStorage implements IStorage {
     return await this.updateMember(primaryId, updates);
   }
 
-  async getFirstTimers(): Promise<FirstTimer[]> {
-    return await db.select().from(firstTimers).orderBy(desc(firstTimers.createdAt));
+  async getFirstTimers(params?: { page?: number; limit?: number }): Promise<PaginatedResult<FirstTimer>> {
+    const page = params?.page ?? 1;
+    const limit = params?.limit ?? 50;
+    const offset = (page - 1) * limit;
+
+    const [{ total }] = await db
+      .select({ total: sql<number>`COUNT(*)::int` })
+      .from(firstTimers);
+
+    const data = await db.select().from(firstTimers)
+      .orderBy(desc(firstTimers.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
   async getFirstTimerById(id: string): Promise<FirstTimer | undefined> {
@@ -528,8 +581,30 @@ export class DatabaseStorage implements IStorage {
       .from(members)
       .where(eq(members.status, status));
 
-    for (const member of membersList) {
-      await this.toggleAttendance(member.id, serviceDate, "Present");
+    if (membersList.length === 0) return;
+
+    const memberIds = membersList.map(m => m.id);
+
+    // Batch-fetch existing attendance records for this date
+    const existing = await db
+      .select({ id: attendance.id, memberId: attendance.memberId })
+      .from(attendance)
+      .where(and(inArray(attendance.memberId, memberIds), eq(attendance.serviceDate, serviceDate)));
+
+    const existingMemberIds = new Set(existing.map(a => a.memberId));
+    const existingIds = existing.map(a => a.id);
+
+    // Batch update existing records
+    if (existingIds.length > 0) {
+      await db.update(attendance).set({ status: "Present" }).where(inArray(attendance.id, existingIds));
+    }
+
+    // Batch insert new records
+    const newMemberIds = memberIds.filter(id => !existingMemberIds.has(id));
+    if (newMemberIds.length > 0) {
+      await db.insert(attendance).values(
+        newMemberIds.map(memberId => ({ memberId, serviceDate, status: "Present" }))
+      );
     }
   }
 
@@ -661,7 +736,13 @@ export class DatabaseStorage implements IStorage {
     assignedTo?: string;
     status?: string;
     memberId?: string;
-  }): Promise<FollowUpTaskWithMember[]> {
+    page?: number;
+    limit?: number;
+  }): Promise<PaginatedResult<FollowUpTaskWithMember>> {
+    const page = filters?.page ?? 1;
+    const limit = filters?.limit ?? 25;
+    const offset = (page - 1) * limit;
+
     const conditions = [];
     if (filters?.assignedTo) {
       conditions.push(eq(followUpTasks.assignedTo, filters.assignedTo));
@@ -672,6 +753,14 @@ export class DatabaseStorage implements IStorage {
     if (filters?.memberId) {
       conditions.push(eq(followUpTasks.memberId, filters.memberId));
     }
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const [{ total }] = await db
+      .select({ total: sql<number>`COUNT(*)::int` })
+      .from(followUpTasks)
+      .innerJoin(members, eq(followUpTasks.memberId, members.id))
+      .where(whereClause);
 
     let query = db
       .select({
@@ -689,16 +778,17 @@ export class DatabaseStorage implements IStorage {
         member: members,
       })
       .from(followUpTasks)
-      .innerJoin(members, eq(followUpTasks.memberId, members.id));
+      .innerJoin(members, eq(followUpTasks.memberId, members.id))
+      .orderBy(asc(followUpTasks.dueDate))
+      .limit(limit)
+      .offset(offset);
 
-    if (conditions.length > 0) {
-      query = query.where(and(...conditions)) as any;
+    if (whereClause) {
+      query = query.where(whereClause) as any;
     }
 
-    query = query.orderBy(followUpTasks.dueDate) as any;
-
-    const results = await query;
-    return results;
+    const data = await query;
+    return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
   async getFollowUpTaskById(id: string): Promise<FollowUpTaskWithMember | undefined> {
@@ -764,12 +854,21 @@ export class DatabaseStorage implements IStorage {
       ? db.select().from(clusters).where(eq(clusters.branchId, branchId)).orderBy(clusters.name)
       : db.select().from(clusters).orderBy(clusters.name));
 
-    return await Promise.all(
-      clusterList.map(async (cluster) => {
-        const clusterCells = await db.select().from(cells).where(eq(cells.clusterId, cluster.id));
-        return { ...cluster, cells: clusterCells, cellCount: clusterCells.length };
-      })
-    );
+    if (clusterList.length === 0) return [];
+
+    const clusterIds = clusterList.map(c => c.id);
+    const allCells = await db.select().from(cells).where(inArray(cells.clusterId, clusterIds));
+
+    const cellsByCluster = new Map<string, Cell[]>();
+    for (const cell of allCells) {
+      if (!cellsByCluster.has(cell.clusterId)) cellsByCluster.set(cell.clusterId, []);
+      cellsByCluster.get(cell.clusterId)!.push(cell);
+    }
+
+    return clusterList.map(cluster => {
+      const clusterCells = cellsByCluster.get(cluster.id) ?? [];
+      return { ...cluster, cells: clusterCells, cellCount: clusterCells.length };
+    });
   }
 
   async getClusterById(id: string): Promise<Cluster | undefined> {
@@ -820,20 +919,28 @@ export class DatabaseStorage implements IStorage {
       ? baseQuery.where(eq(cells.clusterId, clusterId)).orderBy(clusters.name, cells.name)
       : baseQuery.orderBy(clusters.name, cells.name));
 
-    return await Promise.all(
-      cellList.map(async (cell) => {
-        const cellMembers = await db
-          .select()
-          .from(members)
-          .where(eq(members.cell, cell.name));
-        return {
-          ...cell,
-          clusterName: cell.clusterName ?? undefined,
-          members: cellMembers,
-          memberCount: cellMembers.length,
-        };
-      })
-    );
+    if (cellList.length === 0) return [];
+
+    const cellNames = cellList.map(c => c.name);
+    const allMembers = await db.select().from(members).where(inArray(members.cell, cellNames));
+
+    const membersByCell = new Map<string, Member[]>();
+    for (const m of allMembers) {
+      if (m.cell) {
+        if (!membersByCell.has(m.cell)) membersByCell.set(m.cell, []);
+        membersByCell.get(m.cell)!.push(m);
+      }
+    }
+
+    return cellList.map(cell => {
+      const cellMembers = membersByCell.get(cell.name) ?? [];
+      return {
+        ...cell,
+        clusterName: cell.clusterName ?? undefined,
+        members: cellMembers,
+        memberCount: cellMembers.length,
+      };
+    });
   }
 
   async getCellById(id: string): Promise<CellWithMembers | undefined> {
@@ -981,28 +1088,30 @@ export class DatabaseStorage implements IStorage {
   // User Role methods
   async getAllUsers(): Promise<UserWithRole[]> {
     const allUsers = await db.select().from(users).orderBy(users.firstName, users.lastName);
-    
-    const usersWithRoles: UserWithRole[] = await Promise.all(
-      allUsers.map(async (user) => {
-        const [role] = await db.select().from(userRoles).where(eq(userRoles.userId, user.id));
-        let branch: Branch | null = null;
-        if (role?.branchId) {
-          const [b] = await db.select().from(branches).where(eq(branches.id, role.branchId));
-          branch = b || null;
-        }
-        return {
-          id: user.id,
-          email: user.email,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          profileImageUrl: user.profileImageUrl,
-          role: role || null,
-          branch,
-        };
-      })
-    );
-    
-    return usersWithRoles;
+    if (allUsers.length === 0) return [];
+
+    const userIds = allUsers.map(u => u.id);
+    const allRoles = await db.select().from(userRoles).where(inArray(userRoles.userId, userIds));
+
+    const branchIds = Array.from(new Set(allRoles.map(r => r.branchId).filter(Boolean))) as string[];
+    const allBranches = branchIds.length > 0
+      ? await db.select().from(branches).where(inArray(branches.id, branchIds))
+      : [];
+    const branchMap = new Map(allBranches.map(b => [b.id, b]));
+    const roleByUser = new Map(allRoles.map(r => [r.userId, r]));
+
+    return allUsers.map(user => {
+      const role = roleByUser.get(user.id) ?? null;
+      return {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        profileImageUrl: user.profileImageUrl,
+        role,
+        branch: role?.branchId ? branchMap.get(role.branchId) ?? null : null,
+      };
+    });
   }
 
   async getUserWithRole(userId: string): Promise<UserWithRole | undefined> {
@@ -1060,22 +1169,46 @@ export class DatabaseStorage implements IStorage {
     await db.delete(userRoles).where(eq(userRoles.id, id));
   }
 
-  async getOutreach(branchId?: string): Promise<OutreachWithMemberStatus[]> {
-    const records = await (branchId
-      ? db.select().from(outreach).where(eq(outreach.branchId, branchId)).orderBy(desc(outreach.createdAt))
-      : db.select().from(outreach).orderBy(desc(outreach.createdAt)));
+  async getOutreach(params?: { branchId?: string; page?: number; limit?: number }): Promise<PaginatedResult<OutreachWithMemberStatus>> {
+    const page = params?.page ?? 1;
+    const limit = params?.limit ?? 50;
+    const offset = (page - 1) * limit;
 
-    const allMembers = await db.select({ mobilePhone: members.mobilePhone }).from(members);
-    const memberPhones = new Set(allMembers.map((m) => m.mobilePhone.replace(/\s+/g, "")));
+    const whereClause = params?.branchId ? eq(outreach.branchId, params.branchId) : undefined;
 
-    const allClusters = await db.select({ id: clusters.id, name: clusters.name }).from(clusters);
-    const clusterMap = new Map(allClusters.map((c) => [c.id, c.name]));
+    const [{ total }] = await db
+      .select({ total: sql<number>`COUNT(*)::int` })
+      .from(outreach)
+      .where(whereClause);
 
-    return records.map((r) => ({
+    const records = await db.select().from(outreach)
+      .where(whereClause)
+      .orderBy(desc(outreach.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    if (records.length === 0) {
+      return { data: [], total, page, limit, totalPages: Math.ceil(total / limit) };
+    }
+
+    // Load all member phones (single query, one column — small payload even for 1000+ members)
+    const allMemberPhones = await db.select({ mobilePhone: members.mobilePhone }).from(members);
+    const memberPhoneSet = new Set(allMemberPhones.map(m => m.mobilePhone.replace(/\s+/g, "")));
+
+    // Only load clusters referenced by this page's records
+    const clusterIds = Array.from(new Set(records.map(r => r.clusterId).filter(Boolean))) as string[];
+    const relevantClusters = clusterIds.length > 0
+      ? await db.select({ id: clusters.id, name: clusters.name }).from(clusters).where(inArray(clusters.id, clusterIds))
+      : [];
+    const clusterMap = new Map(relevantClusters.map(c => [c.id, c.name]));
+
+    const data = records.map(r => ({
       ...r,
-      isMember: memberPhones.has(r.phoneNumber.replace(/\s+/g, "")),
+      isMember: memberPhoneSet.has(r.phoneNumber.replace(/\s+/g, "")),
       clusterName: r.clusterId ? clusterMap.get(r.clusterId) ?? null : null,
     }));
+
+    return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
   async getOutreachById(id: string): Promise<Outreach | undefined> {
