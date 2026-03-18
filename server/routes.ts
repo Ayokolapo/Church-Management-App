@@ -7,21 +7,16 @@ import multer from "multer";
 import { parse } from "csv-parse/sync";
 import { stringify } from "csv-stringify/sync";
 import { setupAuth, registerAuthRoutes, isAuthenticated, requireRole, requirePermission, invalidatePermissionsCache } from "./replit_integrations/auth";
-import { scrypt, randomBytes, timingSafeEqual } from "crypto";
-import { promisify } from "util";
+import bcrypt from "bcryptjs";
 
-const scryptAsync = promisify(scrypt);
+const BCRYPT_ROUNDS = 12;
 
 async function hashPassword(password: string): Promise<string> {
-  const salt = randomBytes(16).toString("hex");
-  const buf = (await scryptAsync(password, salt, 64)) as Buffer;
-  return `${buf.toString("hex")}.${salt}`;
+  return bcrypt.hash(password, BCRYPT_ROUNDS);
 }
 
 async function verifyPassword(password: string, hash: string): Promise<boolean> {
-  const [hashed, salt] = hash.split(".");
-  const buf = (await scryptAsync(password, salt, 64)) as Buffer;
-  return timingSafeEqual(Buffer.from(hashed, "hex"), buf);
+  return bcrypt.compare(password, hash);
 }
 
 const upload = multer({ storage: multer.memoryStorage() });
@@ -59,7 +54,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         branchId: validatedData.branchId,
         passwordHash,
       });
-      res.status(201).json({ message: "Registration successful", user });
+      const { passwordHash: _, ...safeUser } = user;
+      res.status(201).json({ message: "Registration successful", user: safeUser });
     } catch (error: any) {
       console.error("Error during signup:", error);
       if (error.name === 'ZodError') {
@@ -1304,7 +1300,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/reporting/users", isAuthenticated, requireRole("super_admin"), async (req, res) => {
     try {
       const users = await storage.getUsers();
-      res.json(users);
+      const safeUsers = users.map(({ passwordHash: _, ...u }) => u);
+      res.json(safeUsers);
     } catch (error) {
       console.error("Error fetching users for reporting:", error);
       res.status(500).json({ error: "Failed to fetch users" });
