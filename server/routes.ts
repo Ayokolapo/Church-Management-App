@@ -109,7 +109,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Stats endpoint
-  app.get("/api/stats", async (req, res) => {
+  app.get("/api/stats", isAuthenticated, async (req, res) => {
     try {
       const stats = await storage.getStats();
       res.json(stats);
@@ -120,7 +120,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Analytics endpoints
-  app.get("/api/analytics/attendance-trends", async (req, res) => {
+  app.get("/api/analytics/attendance-trends", isAuthenticated, async (req, res) => {
     try {
       const days = req.query.days ? parseInt(req.query.days as string) : 30;
       const trends = await storage.getAttendanceTrends(days);
@@ -131,7 +131,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/analytics/status-distribution", async (req, res) => {
+  app.get("/api/analytics/status-distribution", isAuthenticated, async (req, res) => {
     try {
       const distribution = await storage.getMemberStatusDistribution();
       res.json(distribution);
@@ -141,7 +141,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/analytics/recent-activity", async (req, res) => {
+  app.get("/api/analytics/recent-activity", isAuthenticated, async (req, res) => {
     try {
       const activity = await storage.getRecentActivity();
       res.json(activity);
@@ -1388,7 +1388,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Outreach routes
-  app.get("/api/outreach", isAuthenticated, async (req, res) => {
+  app.get("/api/outreach", isAuthenticated, requirePermission("outreach.view"), async (req, res) => {
     try {
       const branchId = req.query.branchId as string | undefined;
       const page = req.query.page ? parseInt(req.query.page as string, 10) : 1;
@@ -1401,7 +1401,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/outreach", isAuthenticated, async (req, res) => {
+  app.post("/api/outreach", isAuthenticated, requirePermission("outreach.manage"), async (req, res) => {
     try {
       const data = insertOutreachSchema.parse(req.body);
       const record = await storage.createOutreach(data);
@@ -1415,7 +1415,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/outreach/:id", isAuthenticated, async (req, res) => {
+  app.patch("/api/outreach/:id", isAuthenticated, requirePermission("outreach.manage"), async (req, res) => {
     try {
       const data = insertOutreachSchema.partial().parse(req.body);
       const record = await storage.updateOutreach(req.params.id, data);
@@ -1429,7 +1429,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/outreach/:id", isAuthenticated, async (req, res) => {
+  app.delete("/api/outreach/:id", isAuthenticated, requirePermission("outreach.manage"), async (req, res) => {
     try {
       await storage.deleteOutreach(req.params.id);
       res.json({ success: true });

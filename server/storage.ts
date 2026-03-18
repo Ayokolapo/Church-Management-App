@@ -162,6 +162,7 @@ const ALL_PERMISSIONS = [
   "cells.view", "cells.manage",
   "communications.send",
   "follow_up_tasks.view", "follow_up_tasks.manage",
+  "outreach.view", "outreach.manage",
   "branches.manage", "users.manage", "roles.manage",
 ];
 
@@ -172,12 +173,14 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     "members.view", "first_timers.view", "first_timers.create",
     "attendance.view", "attendance.edit", "cells.view", "cells.manage",
     "follow_up_tasks.view", "follow_up_tasks.manage",
+    "outreach.view", "outreach.manage",
   ],
-  cell_leader: ["members.view", "attendance.view", "cells.view", "follow_up_tasks.view"],
+  cell_leader: ["members.view", "attendance.view", "cells.view", "follow_up_tasks.view", "outreach.view"],
   branch_rep: [
     "members.view", "members.create", "members.edit",
     "first_timers.view", "first_timers.create", "first_timers.convert",
     "attendance.view", "attendance.edit",
+    "outreach.view", "outreach.manage",
   ],
 };
 
