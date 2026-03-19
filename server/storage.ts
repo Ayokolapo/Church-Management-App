@@ -12,6 +12,8 @@ import {
   rolePermissions,
   users,
   outreach,
+  smtpSettings,
+  emailTemplates,
   type Member,
   type InsertMember,
   type FirstTimer,
@@ -44,6 +46,9 @@ import {
   type OutreachWithMemberStatus,
   type PaginatedResult,
   type MemberSlim,
+  type SmtpSettings,
+  type InsertSmtpSettings,
+  type EmailTemplate,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, sql, desc, inArray, asc } from "drizzle-orm";
@@ -153,6 +158,14 @@ export interface IStorage {
   // Role Permissions
   getRolePermissions(): Promise<Record<string, string[]>>;
   setRolePermissions(data: Record<string, string[]>): Promise<void>;
+
+  // SMTP Settings
+  getSmtpSettings(): Promise<SmtpSettings | undefined>;
+  upsertSmtpSettings(data: InsertSmtpSettings): Promise<SmtpSettings>;
+
+  // Email Templates
+  getEmailTemplate(name: string): Promise<EmailTemplate | undefined>;
+  upsertEmailTemplate(name: string, data: { subject: string; htmlContent: string }): Promise<EmailTemplate>;
 }
 
 const ALL_PERMISSIONS = [
@@ -1277,6 +1290,46 @@ export class DatabaseStorage implements IStorage {
     );
     if (rows.length > 0) {
       await db.insert(rolePermissions).values(rows);
+    }
+  }
+
+  // SMTP Settings (single global row)
+  async getSmtpSettings(): Promise<SmtpSettings | undefined> {
+    const rows = await db.select().from(smtpSettings).limit(1);
+    return rows[0];
+  }
+
+  async upsertSmtpSettings(data: InsertSmtpSettings): Promise<SmtpSettings> {
+    const existing = await this.getSmtpSettings();
+    if (existing) {
+      const [updated] = await db.update(smtpSettings)
+        .set({ ...data, updatedAt: new Date() })
+        .where(eq(smtpSettings.id, existing.id))
+        .returning();
+      return updated;
+    } else {
+      const [created] = await db.insert(smtpSettings).values(data).returning();
+      return created;
+    }
+  }
+
+  // Email Templates
+  async getEmailTemplate(name: string): Promise<EmailTemplate | undefined> {
+    const rows = await db.select().from(emailTemplates).where(eq(emailTemplates.name, name)).limit(1);
+    return rows[0];
+  }
+
+  async upsertEmailTemplate(name: string, data: { subject: string; htmlContent: string }): Promise<EmailTemplate> {
+    const existing = await this.getEmailTemplate(name);
+    if (existing) {
+      const [updated] = await db.update(emailTemplates)
+        .set({ subject: data.subject, htmlContent: data.htmlContent, updatedAt: new Date() })
+        .where(eq(emailTemplates.id, existing.id))
+        .returning();
+      return updated;
+    } else {
+      const [created] = await db.insert(emailTemplates).values({ name, ...data }).returning();
+      return created;
     }
   }
 }

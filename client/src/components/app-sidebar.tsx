@@ -1,4 +1,4 @@
-import { Users, UserPlus, CalendarCheck, Home, MessageSquare, ClipboardList, Network, Building2, UserCog, ShieldCheck, LogOut, Megaphone } from "lucide-react";
+import { Users, UserPlus, CalendarCheck, Home, MessageSquare, ClipboardList, Network, Building2, UserCog, ShieldCheck, LogOut, Megaphone, Settings } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import {
   Sidebar,
@@ -74,6 +74,11 @@ const adminMenuItems = [
     title: "Roles & Permissions",
     url: "/roles-permissions",
     icon: ShieldCheck,
+  },
+  {
+    title: "Admin Settings",
+    url: "/admin-settings",
+    icon: Settings,
   },
 ];
 

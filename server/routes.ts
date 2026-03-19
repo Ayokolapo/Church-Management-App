@@ -8,6 +8,135 @@ import { parse } from "csv-parse/sync";
 import { stringify } from "csv-stringify/sync";
 import { setupAuth, registerAuthRoutes, isAuthenticated, requireRole, requirePermission, invalidatePermissionsCache } from "./replit_integrations/auth";
 import bcrypt from "bcryptjs";
+import nodemailer from "nodemailer";
+import crypto from "crypto";
+
+// ---------------------------------------------------------------------------
+// Encryption helpers for SMTP password storage (AES-256-GCM)
+// ---------------------------------------------------------------------------
+// Use a dedicated ENCRYPTION_KEY env var. Fall back to SESSION_SECRET only so
+// that existing deployments that lack ENCRYPTION_KEY don't crash on startup —
+// but emit a clear warning so operators know to add the dedicated key.
+// IMPORTANT: if SESSION_SECRET is rotated without setting ENCRYPTION_KEY first,
+// any stored SMTP password will become unreadable.
+const ENCRYPTION_KEY_RAW = process.env.ENCRYPTION_KEY || process.env.SESSION_SECRET;
+if (!ENCRYPTION_KEY_RAW) {
+  throw new Error("Missing required env var: ENCRYPTION_KEY (or SESSION_SECRET as fallback)");
+}
+if (!process.env.ENCRYPTION_KEY && process.env.NODE_ENV === "production") {
+  console.warn(
+    "[security] ENCRYPTION_KEY env var is not set. Falling back to SESSION_SECRET for SMTP " +
+    "credential encryption. Set a dedicated ENCRYPTION_KEY to avoid data loss on secret rotation."
+  );
+}
+// Derive a 32-byte AES key via SHA-256 (deterministic from the raw secret)
+const ENCRYPTION_KEY = crypto.createHash("sha256").update(ENCRYPTION_KEY_RAW).digest();
+
+function encryptPassword(plaintext: string): string {
+  if (!plaintext) return "";
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", ENCRYPTION_KEY, iv);
+  const encrypted = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  // Format: iv:tag:ciphertext (all hex)
+  return `${iv.toString("hex")}:${tag.toString("hex")}:${encrypted.toString("hex")}`;
+}
+
+function decryptPassword(stored: string): string {
+  if (!stored) return "";
+  try {
+    const [ivHex, tagHex, encHex] = stored.split(":");
+    if (!ivHex || !tagHex || !encHex) return "";
+    const iv = Buffer.from(ivHex, "hex");
+    const tag = Buffer.from(tagHex, "hex");
+    const encrypted = Buffer.from(encHex, "hex");
+    const decipher = crypto.createDecipheriv("aes-256-gcm", ENCRYPTION_KEY, iv);
+    decipher.setAuthTag(tag);
+    return decipher.update(encrypted).toString("utf8") + decipher.final("utf8");
+  } catch {
+    return "";
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Default email templates
+// ---------------------------------------------------------------------------
+const DEFAULT_TEMPLATES: Record<string, { subject: string; htmlContent: string; description: string; variables: string[] }> = {
+  signup_confirmation: {
+    description: "Sent when a new user registers an account.",
+    variables: ["{{firstName}}", "{{lastName}}", "{{email}}"],
+    subject: "Welcome to The Waypoint, {{firstName}}!",
+    htmlContent: `<!DOCTYPE html>
+<html>
+<body style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;">
+  <h2 style="color:#f97316;">Welcome to The Waypoint!</h2>
+  <p>Hi {{firstName}},</p>
+  <p>Thank you for registering. Your account has been created and is pending approval by an administrator.</p>
+  <p>You will receive another email once your role has been assigned.</p>
+  <p style="color:#6b7280;font-size:12px;">This email was sent to {{email}}</p>
+</body>
+</html>`,
+  },
+  password_reset: {
+    description: "Sent when a user requests a password reset.",
+    variables: ["{{firstName}}", "{{resetLink}}", "{{expiresIn}}"],
+    subject: "Reset your password",
+    htmlContent: `<!DOCTYPE html>
+<html>
+<body style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;">
+  <h2 style="color:#f97316;">Password Reset Request</h2>
+  <p>Hi {{firstName}},</p>
+  <p>We received a request to reset your password. Click the button below to create a new password:</p>
+  <a href="{{resetLink}}" style="display:inline-block;background:#f97316;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;margin:16px 0;">Reset Password</a>
+  <p>This link expires in {{expiresIn}}.</p>
+  <p>If you did not request this, please ignore this email.</p>
+</body>
+</html>`,
+  },
+  password_changed: {
+    description: "Sent when a user's password has been changed.",
+    variables: ["{{firstName}}", "{{email}}"],
+    subject: "Your password has been changed",
+    htmlContent: `<!DOCTYPE html>
+<html>
+<body style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;">
+  <h2 style="color:#f97316;">Password Changed</h2>
+  <p>Hi {{firstName}},</p>
+  <p>Your account password has been successfully changed.</p>
+  <p>If you did not make this change, please contact your administrator immediately.</p>
+  <p style="color:#6b7280;font-size:12px;">Account: {{email}}</p>
+</body>
+</html>`,
+  },
+  role_assigned: {
+    description: "Sent when an administrator assigns a role to a user.",
+    variables: ["{{firstName}}", "{{role}}", "{{branchName}}"],
+    subject: "Your role has been assigned",
+    htmlContent: `<!DOCTYPE html>
+<html>
+<body style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;">
+  <h2 style="color:#f97316;">Role Assigned</h2>
+  <p>Hi {{firstName}},</p>
+  <p>An administrator has assigned you the <strong>{{role}}</strong> role at <strong>{{branchName}}</strong>.</p>
+  <p>You can now log in and access the Church Management System with your new permissions.</p>
+</body>
+</html>`,
+  },
+  general_notification: {
+    description: "A general-purpose notification template.",
+    variables: ["{{firstName}}", "{{subject}}", "{{message}}"],
+    subject: "{{subject}}",
+    htmlContent: `<!DOCTYPE html>
+<html>
+<body style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;">
+  <h2 style="color:#f97316;">{{subject}}</h2>
+  <p>Hi {{firstName}},</p>
+  <p>{{message}}</p>
+  <p style="color:#6b7280;font-size:12px;">— The Waypoint Team</p>
+</body>
+</html>`,
+  },
+};
 
 const BCRYPT_ROUNDS = 12;
 
@@ -1435,6 +1564,211 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: "Failed to delete outreach record" });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // Admin: SMTP Settings
+  // -------------------------------------------------------------------------
+
+  // GET /api/admin/smtp-settings — return settings without the raw password
+  app.get("/api/admin/smtp-settings", isAuthenticated, requireRole("super_admin", "branch_admin"), async (req, res) => {
+    try {
+      const settings = await storage.getSmtpSettings();
+      if (!settings) return res.json(null);
+      // Never expose the encrypted password to the client
+      const { encryptedPassword: _, ...safeSettings } = settings;
+      res.json({ ...safeSettings, hasPassword: !!settings.encryptedPassword });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to load SMTP settings" });
+    }
+  });
+
+  // POST /api/admin/smtp-settings — save settings (encrypt password if provided)
+  app.post("/api/admin/smtp-settings", isAuthenticated, requireRole("super_admin", "branch_admin"), async (req, res) => {
+    try {
+      const { host, port, username, password, fromEmail, fromName, security, enabled } = req.body;
+
+      if (!host || !username || !fromEmail || !fromName) {
+        return res.status(400).json({ error: "Host, username, from email, and from name are required" });
+      }
+
+      // If no new password provided, keep the existing encrypted one
+      let encryptedPassword = "";
+      if (password) {
+        encryptedPassword = encryptPassword(password);
+      } else {
+        const existing = await storage.getSmtpSettings();
+        encryptedPassword = existing?.encryptedPassword ?? "";
+      }
+
+      const saved = await storage.upsertSmtpSettings({
+        host,
+        port: parseInt(port) || 587,
+        username,
+        encryptedPassword,
+        fromEmail,
+        fromName,
+        security: security || "starttls",
+        enabled: enabled === true || enabled === "true",
+      });
+
+      const { encryptedPassword: __, ...safeSettings } = saved;
+      res.json({ ...safeSettings, hasPassword: !!saved.encryptedPassword });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to save SMTP settings" });
+    }
+  });
+
+  // POST /api/admin/smtp-settings/test — verify SMTP credentials work
+  app.post("/api/admin/smtp-settings/test", isAuthenticated, requireRole("super_admin", "branch_admin"), async (req, res) => {
+    try {
+      const { host, port, username, password, security } = req.body;
+
+      if (!host || !username) {
+        return res.status(400).json({ error: "Host and username are required" });
+      }
+
+      // Determine if we use the supplied password or the stored one
+      let resolvedPassword = password as string | undefined;
+      if (!resolvedPassword) {
+        const existing = await storage.getSmtpSettings();
+        if (existing?.encryptedPassword) {
+          resolvedPassword = decryptPassword(existing.encryptedPassword);
+        }
+      }
+
+      const portNum = parseInt(port) || 587;
+      const secure = security === "ssl"; // SSL=true, STARTTLS/none=false
+
+      const transporter = nodemailer.createTransport({
+        host,
+        port: portNum,
+        secure,
+        auth: { user: username, pass: resolvedPassword || "" },
+        tls: { rejectUnauthorized: false },
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+      });
+
+      await transporter.verify();
+      res.json({ success: true, message: "Connection successful! SMTP credentials are valid." });
+    } catch (error: any) {
+      res.status(400).json({ success: false, error: `Connection failed: ${error.message}` });
+    }
+  });
+
+  // POST /api/admin/smtp-settings/send-test — send a test email
+  app.post("/api/admin/smtp-settings/send-test", isAuthenticated, requireRole("super_admin", "branch_admin"), async (req, res) => {
+    try {
+      const { toEmail } = req.body;
+      if (!toEmail) return res.status(400).json({ error: "Recipient email is required" });
+
+      const settings = await storage.getSmtpSettings();
+      if (!settings || !settings.enabled) {
+        return res.status(400).json({ error: "SMTP is not configured or disabled" });
+      }
+
+      const password = decryptPassword(settings.encryptedPassword);
+      const secure = settings.security === "ssl";
+
+      const transporter = nodemailer.createTransport({
+        host: settings.host,
+        port: settings.port,
+        secure,
+        auth: { user: settings.username, pass: password },
+        tls: { rejectUnauthorized: false },
+      });
+
+      await transporter.sendMail({
+        from: `"${settings.fromName}" <${settings.fromEmail}>`,
+        to: toEmail,
+        subject: "Test Email from The Waypoint CMS",
+        html: `<p>This is a test email from <strong>The Waypoint Church Management System</strong>.</p><p>If you received this, your SMTP configuration is working correctly.</p>`,
+      });
+
+      res.json({ success: true, message: `Test email sent to ${toEmail}` });
+    } catch (error: any) {
+      res.status(500).json({ error: `Failed to send test email: ${error.message}` });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // Admin: Email Templates
+  // -------------------------------------------------------------------------
+
+  // GET /api/admin/email-templates — list available template names with metadata
+  app.get("/api/admin/email-templates", isAuthenticated, requireRole("super_admin", "branch_admin"), async (req, res) => {
+    try {
+      const templateList = Object.entries(DEFAULT_TEMPLATES).map(([name, meta]) => ({
+        name,
+        description: meta.description,
+        variables: meta.variables,
+      }));
+      res.json(templateList);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to list templates" });
+    }
+  });
+
+  // GET /api/admin/email-templates/:name — get a specific template (custom or default)
+  app.get("/api/admin/email-templates/:name", isAuthenticated, requireRole("super_admin", "branch_admin"), async (req, res) => {
+    try {
+      const { name } = req.params;
+      if (!DEFAULT_TEMPLATES[name]) return res.status(404).json({ error: "Template not found" });
+
+      const custom = await storage.getEmailTemplate(name);
+      const defaults = DEFAULT_TEMPLATES[name];
+
+      res.json({
+        name,
+        subject: custom?.subject ?? defaults.subject,
+        htmlContent: custom?.htmlContent ?? defaults.htmlContent,
+        description: defaults.description,
+        variables: defaults.variables,
+        isCustomized: !!custom,
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to load template" });
+    }
+  });
+
+  // POST /api/admin/email-templates/:name — save a customised template
+  app.post("/api/admin/email-templates/:name", isAuthenticated, requireRole("super_admin", "branch_admin"), async (req, res) => {
+    try {
+      const { name } = req.params;
+      if (!DEFAULT_TEMPLATES[name]) return res.status(404).json({ error: "Template not found" });
+
+      const { subject, htmlContent } = req.body;
+      if (!subject || !htmlContent) return res.status(400).json({ error: "Subject and HTML content are required" });
+
+      const saved = await storage.upsertEmailTemplate(name, { subject, htmlContent });
+      const defaults = DEFAULT_TEMPLATES[name];
+      res.json({ ...saved, description: defaults.description, variables: defaults.variables, isCustomized: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to save template" });
+    }
+  });
+
+  // DELETE /api/admin/email-templates/:name — reset to default
+  app.delete("/api/admin/email-templates/:name", isAuthenticated, requireRole("super_admin", "branch_admin"), async (req, res) => {
+    try {
+      const { name } = req.params;
+      if (!DEFAULT_TEMPLATES[name]) return res.status(404).json({ error: "Template not found" });
+
+      const existing = await storage.getEmailTemplate(name);
+      if (existing) {
+        // Remove the custom template — we import db and emailTemplates here lazily
+        const { db } = await import("./db");
+        const { emailTemplates } = await import("@shared/schema");
+        const { eq } = await import("drizzle-orm");
+        await db.delete(emailTemplates).where(eq(emailTemplates.id, existing.id));
+      }
+
+      const defaults = DEFAULT_TEMPLATES[name];
+      res.json({ name, ...defaults, isCustomized: false });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to reset template" });
     }
   });
 

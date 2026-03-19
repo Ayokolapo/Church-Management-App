@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, date, integer, index } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, date, integer, index, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -368,3 +368,51 @@ export interface PaginatedResult<T> {
 
 // Slim member type for dropdowns and attendance (no expensive attendance subqueries)
 export type MemberSlim = Pick<Member, 'id' | 'firstName' | 'lastName' | 'mobilePhone' | 'email' | 'status' | 'cluster'>;
+
+// SMTP Settings - single global row
+export const smtpSettings = pgTable("smtp_settings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  host: text("host").notNull().default(''),
+  port: integer("port").notNull().default(587),
+  username: text("username").notNull().default(''),
+  encryptedPassword: text("encrypted_password").notNull().default(''),
+  fromEmail: text("from_email").notNull().default(''),
+  fromName: text("from_name").notNull().default(''),
+  security: text("security").notNull().default('starttls'), // 'starttls' | 'ssl' | 'none'
+  enabled: boolean("enabled").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertSmtpSettingsSchema = createInsertSchema(smtpSettings, {
+  host: z.string().min(1, "SMTP host is required"),
+  port: z.number().int().min(1).max(65535),
+  username: z.string().min(1, "Username is required"),
+  encryptedPassword: z.string(),
+  fromEmail: z.string().email("Invalid from email"),
+  fromName: z.string().min(1, "From name is required"),
+  security: z.enum(['starttls', 'ssl', 'none']),
+  enabled: z.boolean(),
+}).omit({ id: true, createdAt: true, updatedAt: true });
+
+export type SmtpSettings = typeof smtpSettings.$inferSelect;
+export type InsertSmtpSettings = z.infer<typeof insertSmtpSettingsSchema>;
+
+// Email Templates
+export const emailTemplates = pgTable("email_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull().unique(), // e.g. 'signup_confirmation'
+  subject: text("subject").notNull(),
+  htmlContent: text("html_content").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertEmailTemplateSchema = createInsertSchema(emailTemplates, {
+  name: z.string().min(1),
+  subject: z.string().min(1, "Subject is required"),
+  htmlContent: z.string().min(1, "HTML content is required"),
+}).omit({ id: true, createdAt: true, updatedAt: true });
+
+export type EmailTemplate = typeof emailTemplates.$inferSelect;
+export type InsertEmailTemplate = z.infer<typeof insertEmailTemplateSchema>;

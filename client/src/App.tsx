@@ -19,6 +19,7 @@ import Users from "@/pages/users";
 import RolesPermissions from "@/pages/roles-permissions";
 import AuthPage from "@/pages/auth-page";
 import Outreach from "@/pages/outreach";
+import AdminSettings from "@/pages/admin-settings";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -36,6 +37,7 @@ function Router() {
       <Route path="/users" component={Users} />
       <Route path="/roles-permissions" component={RolesPermissions} />
       <Route path="/outreach" component={Outreach} />
+      <Route path="/admin-settings" component={AdminSettings} />
       <Route component={NotFound} />
     </Switch>
   );
