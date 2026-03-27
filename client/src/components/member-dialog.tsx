@@ -134,11 +134,12 @@ export function MemberDialog({ member, open, onClose }: MemberDialogProps) {
   const { data: followUpWorkerOptions } = useQuery<MemberWithAttendanceStats[]>({
     queryKey: ["/api/members", "follow-up-workers"],
     queryFn: async () => {
-      const res = await fetch("/api/members?statuses=Volunteer,Worker,Leader", {
+      const res = await fetch("/api/members?statuses=Volunteer,Worker,Leader&limit=200", {
         credentials: "include",
       });
       if (!res.ok) return [];
-      return res.json();
+      const result = await res.json();
+      return result.data ?? result;
     },
   });
 

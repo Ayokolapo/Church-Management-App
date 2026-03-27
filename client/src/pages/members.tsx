@@ -62,7 +62,7 @@ export default function Members() {
     });
   }, []);
 
-  const { data: result, isLoading } = useQuery<PaginatedResult<MemberWithAttendanceStats>>({
+  const { data: result, isLoading, isError, error } = useQuery<PaginatedResult<MemberWithAttendanceStats>>({
     queryKey: [
       "/api/members",
       filters.status,
@@ -201,6 +201,10 @@ export default function Members() {
         <div className="space-y-4">
           <Skeleton className="h-12 w-full" />
           <Skeleton className="h-96 w-full" />
+        </div>
+      ) : isError ? (
+        <div className="text-center py-12 text-destructive">
+          Failed to load members: {(error as Error)?.message ?? "Unknown error"}
         </div>
       ) : (
         <MemberTable members={members} onEdit={handleEdit} visibleColumns={visibleColumns} />

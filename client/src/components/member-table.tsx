@@ -133,9 +133,14 @@ export function MemberTable({ members, onEdit, visibleColumns }: MemberTableProp
               )}
               {visibleColumns.has("lastAttended") && (
                 <TableCell className="text-sm">
-                  {member.lastAttended
-                    ? formatDistanceToNow(new Date(member.lastAttended), { addSuffix: true })
-                    : "Never"}
+                  {(() => {
+                    if (!member.lastAttended) return "Never";
+                    try {
+                      return formatDistanceToNow(new Date(member.lastAttended), { addSuffix: true });
+                    } catch {
+                      return member.lastAttended;
+                    }
+                  })()}
                 </TableCell>
               )}
               {visibleColumns.has("timesAttended") && (
