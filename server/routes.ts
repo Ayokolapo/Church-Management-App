@@ -548,6 +548,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Bulk delete
+  app.delete("/api/members/bulk", isAuthenticated, requirePermission("members.delete"), async (req, res) => {
+    try {
+      const { ids, selectAll, filters } = req.body;
+      let targetIds: string[] = ids ?? [];
+      if (selectAll && filters) {
+        targetIds = await storage.getMemberIdsByFilters(filters);
+      }
+      if (targetIds.length === 0) return res.status(400).json({ error: "No members selected" });
+      await storage.bulkDeleteMembers(targetIds);
+      res.json({ deleted: targetIds.length });
+    } catch (error) {
+      console.error("Error bulk deleting members:", error);
+      res.status(500).json({ error: "Failed to bulk delete members" });
+    }
+  });
+
+  // Bulk update
+  app.patch("/api/members/bulk", isAuthenticated, requirePermission("members.edit"), async (req, res) => {
+    try {
+      const { ids, selectAll, filters, updates } = req.body;
+      if (!updates || Object.keys(updates).length === 0) {
+        return res.status(400).json({ error: "No updates provided" });
+      }
+      let targetIds: string[] = ids ?? [];
+      if (selectAll && filters) {
+        targetIds = await storage.getMemberIdsByFilters(filters);
+      }
+      if (targetIds.length === 0) return res.status(400).json({ error: "No members selected" });
+      await storage.bulkUpdateMembers(targetIds, updates);
+      res.json({ updated: targetIds.length });
+    } catch (error) {
+      console.error("Error bulk updating members:", error);
+      res.status(500).json({ error: "Failed to bulk update members" });
+    }
+  });
+
   // Parameterized routes must come after specific routes
   app.get("/api/members/:id", isAuthenticated, requirePermission("members.view"), async (req, res) => {
     try {

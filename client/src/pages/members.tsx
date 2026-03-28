@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Download, Upload, Filter, Columns, Search, GitMerge, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,17 +9,23 @@ import { ImportDialog } from "@/components/import-dialog";
 import { MergeDuplicatesDialog } from "@/components/merge-duplicates-dialog";
 import { ColumnVisibilityDialog, DEFAULT_VISIBLE_COLUMNS } from "@/components/column-visibility-dialog";
 import { MemberFilters } from "@/components/member-filters";
+import { BulkUpdateDialog } from "@/components/bulk-update-dialog";
 import type { MemberWithAttendanceStats, PaginatedResult } from "@shared/schema";
 import { Skeleton } from "@/components/ui/skeleton";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 const PAGE_LIMIT = 50;
 
 export default function Members() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [showMemberDialog, setShowMemberDialog] = useState(false);
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [showColumnDialog, setShowColumnDialog] = useState(false);
   const [showMergeDialog, setShowMergeDialog] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [showBulkUpdateDialog, setShowBulkUpdateDialog] = useState(false);
   const [searchInput, setSearchInput] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [page, setPage] = useState(1);
@@ -33,6 +39,8 @@ export default function Members() {
     occupation: "",
     cluster: "",
   });
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isSelectAllMode, setIsSelectAllMode] = useState(false);
 
   // Debounce search input
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -49,6 +57,67 @@ export default function Members() {
   useEffect(() => {
     setPage(1);
   }, [filters.status, filters.gender, filters.occupation, filters.cluster]);
+
+  // Reset selection when filters/search/page change
+  useEffect(() => {
+    setSelectedIds(new Set());
+    setIsSelectAllMode(false);
+  }, [filters.status, filters.gender, filters.occupation, filters.cluster, searchTerm, page]);
+
+  const handleToggleSelect = (id: string) => {
+    setIsSelectAllMode(false);
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const handleToggleSelectAll = (pageIds: string[]) => {
+    setIsSelectAllMode(false);
+    const allSelected = pageIds.every(id => selectedIds.has(id));
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (allSelected) pageIds.forEach(id => next.delete(id));
+      else pageIds.forEach(id => next.add(id));
+      return next;
+    });
+  };
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async () => {
+      const body = isSelectAllMode
+        ? { selectAll: true, filters: { ...filters, search: searchTerm } }
+        : { ids: Array.from(selectedIds) };
+      const res = await apiRequest("DELETE", "/api/members/bulk", body);
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/members"] });
+      setSelectedIds(new Set());
+      setIsSelectAllMode(false);
+      toast({ title: "Success", description: `${data.deleted} member(s) deleted` });
+    },
+    onError: () => toast({ title: "Error", description: "Failed to delete members", variant: "destructive" }),
+  });
+
+  const bulkUpdateMutation = useMutation({
+    mutationFn: async (updates: Record<string, string>) => {
+      const body = isSelectAllMode
+        ? { selectAll: true, filters: { ...filters, search: searchTerm }, updates }
+        : { ids: Array.from(selectedIds), updates };
+      const res = await apiRequest("PATCH", "/api/members/bulk", body);
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/members"] });
+      setSelectedIds(new Set());
+      setIsSelectAllMode(false);
+      setShowBulkUpdateDialog(false);
+      toast({ title: "Success", description: `${data.updated} member(s) updated` });
+    },
+    onError: () => toast({ title: "Error", description: "Failed to update members", variant: "destructive" }),
+  });
 
   const handleToggleColumn = useCallback((columnId: string) => {
     setVisibleColumns((prev) => {
@@ -197,6 +266,47 @@ export default function Members() {
         <MemberFilters filters={filters} onFiltersChange={setFilters} />
       )}
 
+      {(selectedIds.size > 0 || isSelectAllMode) && (
+        <div className="flex items-center gap-3 p-3 bg-muted rounded-md border">
+          <span className="text-sm font-medium">
+            {isSelectAllMode ? `All ${total} members selected` : `${selectedIds.size} member(s) selected`}
+          </span>
+          {!isSelectAllMode && members.length > 0 && selectedIds.size === members.length && total > members.length && (
+            <Button variant="link" size="sm" className="h-auto p-0 text-sm" onClick={() => setIsSelectAllMode(true)}>
+              Select all {total} members matching filters
+            </Button>
+          )}
+          <div className="ml-auto flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowBulkUpdateDialog(true)}
+            >
+              Update Field
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => {
+                if (confirm(`Delete ${isSelectAllMode ? total : selectedIds.size} member(s)? This cannot be undone.`)) {
+                  bulkDeleteMutation.mutate();
+                }
+              }}
+              disabled={bulkDeleteMutation.isPending}
+            >
+              Delete Selected
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => { setSelectedIds(new Set()); setIsSelectAllMode(false); }}
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
+
       {isLoading ? (
         <div className="space-y-4">
           <Skeleton className="h-12 w-full" />
@@ -207,7 +317,14 @@ export default function Members() {
           Failed to load members: {(error as Error)?.message ?? "Unknown error"}
         </div>
       ) : (
-        <MemberTable members={members} onEdit={handleEdit} visibleColumns={visibleColumns} />
+        <MemberTable
+          members={members}
+          onEdit={handleEdit}
+          visibleColumns={visibleColumns}
+          selectedIds={selectedIds}
+          onToggleSelect={handleToggleSelect}
+          onToggleSelectAll={handleToggleSelectAll}
+        />
       )}
 
       {/* Pagination */}
@@ -269,6 +386,16 @@ export default function Members() {
         <MergeDuplicatesDialog
           open={showMergeDialog}
           onClose={() => setShowMergeDialog(false)}
+        />
+      )}
+
+      {showBulkUpdateDialog && (
+        <BulkUpdateDialog
+          open={showBulkUpdateDialog}
+          onClose={() => setShowBulkUpdateDialog(false)}
+          count={isSelectAllMode ? total : selectedIds.size}
+          onConfirm={(updates) => bulkUpdateMutation.mutate(updates)}
+          isPending={bulkUpdateMutation.isPending}
         />
       )}
     </div>

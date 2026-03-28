@@ -1,5 +1,6 @@
 import { Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Table,
   TableBody,
@@ -19,9 +20,12 @@ interface MemberTableProps {
   members: MemberWithAttendanceStats[];
   onEdit: (member: MemberWithAttendanceStats) => void;
   visibleColumns: Set<string>;
+  selectedIds: Set<string>;
+  onToggleSelect: (id: string) => void;
+  onToggleSelectAll: (ids: string[]) => void;
 }
 
-export function MemberTable({ members, onEdit, visibleColumns }: MemberTableProps) {
+export function MemberTable({ members, onEdit, visibleColumns, selectedIds, onToggleSelect, onToggleSelectAll }: MemberTableProps) {
   const { toast } = useToast();
 
   const deleteMutation = useMutation({
@@ -65,6 +69,9 @@ export function MemberTable({ members, onEdit, visibleColumns }: MemberTableProp
     }
   };
 
+  const allSelected = members.length > 0 && members.every(m => selectedIds.has(m.id));
+  const someSelected = members.some(m => selectedIds.has(m.id));
+
   if (members.length === 0) {
     return (
       <div className="text-center py-12 text-muted-foreground">
@@ -78,6 +85,13 @@ export function MemberTable({ members, onEdit, visibleColumns }: MemberTableProp
       <Table>
         <TableHeader>
           <TableRow>
+            <TableHead className="w-10">
+              <Checkbox
+                checked={allSelected ? true : someSelected ? "indeterminate" : false}
+                onCheckedChange={() => onToggleSelectAll(members.map(m => m.id))}
+                aria-label="Select all on page"
+              />
+            </TableHead>
             {visibleColumns.has("name") && <TableHead>Name</TableHead>}
             {visibleColumns.has("gender") && <TableHead>Gender</TableHead>}
             {visibleColumns.has("phone") && <TableHead className="font-mono">Phone</TableHead>}
@@ -99,6 +113,13 @@ export function MemberTable({ members, onEdit, visibleColumns }: MemberTableProp
         <TableBody>
           {members.map((member) => (
             <TableRow key={member.id} data-testid={`row-member-${member.id}`}>
+              <TableCell>
+                <Checkbox
+                  checked={selectedIds.has(member.id)}
+                  onCheckedChange={() => onToggleSelect(member.id)}
+                  aria-label={`Select ${member.firstName} ${member.lastName}`}
+                />
+              </TableCell>
               {visibleColumns.has("name") && (
                 <TableCell className="font-medium">
                   {member.firstName} {member.lastName}

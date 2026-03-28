@@ -61,6 +61,9 @@ export interface IStorage {
   createMember(member: InsertMember): Promise<Member>;
   updateMember(id: string, member: Partial<InsertMember>): Promise<Member>;
   deleteMember(id: string): Promise<void>;
+  bulkDeleteMembers(ids: string[]): Promise<void>;
+  bulkUpdateMembers(ids: string[], updates: Partial<InsertMember>): Promise<void>;
+  getMemberIdsByFilters(filters: { status?: string; statuses?: string[]; gender?: string; occupation?: string; cluster?: string; search?: string }): Promise<string[]>;
   findDuplicates(): Promise<{ reason: string; members: Member[] }[]>;
   mergeMembers(primaryId: string, duplicateIds: string[]): Promise<Member>;
 
@@ -329,6 +332,35 @@ export class DatabaseStorage implements IStorage {
 
   async deleteMember(id: string): Promise<void> {
     await db.delete(members).where(eq(members.id, id));
+  }
+
+  async bulkDeleteMembers(ids: string[]): Promise<void> {
+    if (ids.length === 0) return;
+    await db.delete(members).where(inArray(members.id, ids));
+  }
+
+  async bulkUpdateMembers(ids: string[], updates: Partial<InsertMember>): Promise<void> {
+    if (ids.length === 0) return;
+    await db.update(members).set({ ...updates, updatedAt: new Date() }).where(inArray(members.id, ids));
+  }
+
+  async getMemberIdsByFilters(filters: { status?: string; statuses?: string[]; gender?: string; occupation?: string; cluster?: string; search?: string }): Promise<string[]> {
+    const conditions = [];
+    if (filters.statuses && filters.statuses.length > 0) {
+      conditions.push(inArray(members.status, filters.statuses));
+    } else if (filters.status) {
+      conditions.push(eq(members.status, filters.status));
+    }
+    if (filters.gender) conditions.push(eq(members.gender, filters.gender));
+    if (filters.occupation) conditions.push(eq(members.occupation, filters.occupation));
+    if (filters.cluster) conditions.push(eq(members.cluster, filters.cluster));
+    if (filters.search) {
+      const term = `%${filters.search}%`;
+      conditions.push(sql`(${members.firstName} ILIKE ${term} OR ${members.lastName} ILIKE ${term} OR ${members.mobilePhone} ILIKE ${term})`);
+    }
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+    const rows = await db.select({ id: members.id }).from(members).where(whereClause);
+    return rows.map(r => r.id);
   }
 
   async findDuplicates(): Promise<{ reason: string; members: Member[] }[]> {
