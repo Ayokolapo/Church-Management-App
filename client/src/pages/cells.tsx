@@ -37,6 +37,7 @@ export default function Cells() {
   const [attendanceDate, setAttendanceDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [selectedMembers, setSelectedMembers] = useState<Set<string>>(new Set());
   const [attendanceMemberSearch, setAttendanceMemberSearch] = useState("");
+  const [showCellMembersOnly, setShowCellMembersOnly] = useState(false);
 
   const { data: cells, isLoading: cellsLoading } = useQuery<CellWithMembers[]>({
     queryKey: ["/api/cells"],
@@ -171,6 +172,7 @@ export default function Cells() {
     setSelectedCell(cell);
     setSelectedMembers(new Set());
     setAttendanceMemberSearch("");
+    setShowCellMembersOnly(false);
     setShowAttendanceDialog(true);
   };
 
@@ -247,11 +249,25 @@ export default function Cells() {
   const cellMembers = selectedCell ? allMembers?.filter(m => m.cell === selectedCell.name) : [];
 
   const filteredAttendanceMembers = (allMembers ?? []).filter(m => {
+    if (showCellMembersOnly && m.cell !== selectedCell?.name) return false;
     if (!attendanceMemberSearch) return true;
     const s = attendanceMemberSearch.toLowerCase();
     return `${m.firstName} ${m.lastName}`.toLowerCase().includes(s) ||
       m.mobilePhone.includes(s);
   });
+
+  const allVisiblePresent = filteredAttendanceMembers.length > 0 &&
+    filteredAttendanceMembers.every(m => cellAttendance?.some(a => a.memberId === m.id) || selectedMembers.has(m.id));
+  const someVisiblePresent = filteredAttendanceMembers.some(m => cellAttendance?.some(a => a.memberId === m.id) || selectedMembers.has(m.id));
+
+  const handleSelectAll = () => {
+    filteredAttendanceMembers.forEach(m => {
+      const isPresent = cellAttendance?.some(a => a.memberId === m.id) || selectedMembers.has(m.id);
+      if (allVisiblePresent ? isPresent : !isPresent) {
+        handleToggleMemberAttendance(m.id, !allVisiblePresent);
+      }
+    });
+  };
 
   const presentCount = cellAttendance?.length ?? 0;
 
@@ -553,26 +569,53 @@ export default function Cells() {
               </div>
             )}
 
-            {/* Search members */}
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search all members..."
-                value={attendanceMemberSearch}
-                onChange={(e) => setAttendanceMemberSearch(e.target.value)}
-                className="pl-9"
-                data-testid="input-attendance-search"
-              />
+            {/* Search + filter */}
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search members..."
+                  value={attendanceMemberSearch}
+                  onChange={(e) => setAttendanceMemberSearch(e.target.value)}
+                  className="pl-9"
+                  data-testid="input-attendance-search"
+                />
+              </div>
+              <Button
+                variant={showCellMembersOnly ? "default" : "outline"}
+                size="sm"
+                onClick={() => setShowCellMembersOnly(v => !v)}
+                className="shrink-0"
+              >
+                <Users className="w-4 h-4 mr-1" />
+                Cell only
+              </Button>
             </div>
 
             {/* Member list */}
             <div className="space-y-1 max-h-64 overflow-y-auto pr-1">
               {filteredAttendanceMembers.length === 0 ? (
                 <p className="text-center text-muted-foreground py-6 text-sm">
-                  {attendanceMemberSearch ? "No members match your search." : "No members found."}
+                  {attendanceMemberSearch || showCellMembersOnly ? "No members match your search." : "No members found."}
                 </p>
               ) : (
-                filteredAttendanceMembers.map(member => {
+                <>
+                  {/* Select all row */}
+                  <div
+                    className="flex items-center gap-3 px-2.5 py-2 rounded-md bg-muted/50 cursor-pointer"
+                    onClick={handleSelectAll}
+                  >
+                    <Checkbox
+                      checked={allVisiblePresent ? true : someVisiblePresent ? "indeterminate" : false}
+                      onCheckedChange={handleSelectAll}
+                    />
+                    <span className="text-sm font-medium">
+                      {allVisiblePresent ? "Deselect all" : "Select all"} ({filteredAttendanceMembers.length})
+                    </span>
+                  </div>
+                </>
+              )}
+              {filteredAttendanceMembers.map(member => {
                   const isPresent = cellAttendance?.some(a => a.memberId === member.id) || selectedMembers.has(member.id);
                   return (
                     <div
