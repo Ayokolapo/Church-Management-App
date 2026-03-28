@@ -616,28 +616,27 @@ export default function Cells() {
                 </>
               )}
               {filteredAttendanceMembers.map(member => {
-                  const isPresent = cellAttendance?.some(a => a.memberId === member.id) || selectedMembers.has(member.id);
-                  return (
-                    <div
-                      key={member.id}
-                      className="flex items-center gap-3 p-2.5 border rounded-md hover-elevate cursor-pointer"
-                      onClick={() => handleToggleMemberAttendance(member.id, !isPresent)}
-                      data-testid={`attendance-member-${member.id}`}
-                    >
-                      <Checkbox
-                        checked={isPresent}
-                        onCheckedChange={(checked) => handleToggleMemberAttendance(member.id, !!checked)}
-                        data-testid={`checkbox-attendance-${member.id}`}
-                      />
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-sm">{member.firstName} {member.lastName}</p>
-                        <p className="text-xs text-muted-foreground">{member.mobilePhone}</p>
-                      </div>
-                      {isPresent && <Check className="w-4 h-4 text-green-600 shrink-0" />}
+                const isPresent = cellAttendance?.some(a => a.memberId === member.id) || selectedMembers.has(member.id);
+                return (
+                  <div
+                    key={member.id}
+                    className="flex items-center gap-3 p-2.5 border rounded-md hover-elevate cursor-pointer"
+                    onClick={() => handleToggleMemberAttendance(member.id, !isPresent)}
+                    data-testid={`attendance-member-${member.id}`}
+                  >
+                    <Checkbox
+                      checked={isPresent}
+                      onCheckedChange={(checked) => handleToggleMemberAttendance(member.id, !!checked)}
+                      data-testid={`checkbox-attendance-${member.id}`}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm">{member.firstName} {member.lastName}</p>
+                      <p className="text-xs text-muted-foreground">{member.mobilePhone}</p>
                     </div>
-                  );
-                })
-              )}
+                    {isPresent && <Check className="w-4 h-4 text-green-600 shrink-0" />}
+                  </div>
+                );
+              })}
             </div>
           </div>
 
