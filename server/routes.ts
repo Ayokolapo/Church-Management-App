@@ -467,7 +467,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const ENUM_FIELDS = [
         { csvCol: "Gender", label: "Gender", allowed: ["Male", "Female"] },
         { csvCol: "Occupation", label: "Occupation", allowed: ["Students", "Workers", "Unemployed", "Self-Employed"] },
-        { csvCol: "Status", label: "Status", allowed: ["Crowd", "Potential", "Committed", "Worker", "Leader"] },
+        { csvCol: "Status", label: "Status", allowed: ["Crowd", "Potential", "Committed", "Volunteer", "Worker", "Leader"] },
         { csvCol: "Archive", label: "Archive", allowed: ["Active", "Relocated", "Has a church", "Wrong number", "Unreachable", "Not interested"] },
       ];
 
@@ -534,7 +534,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
               failures.push({ row: rowNum, field: fieldNameMap[rawField] ?? rawField, reason: issue.message });
             }
           } else {
-            failures.push({ row: rowNum, field: "Unknown", reason: "Unexpected error during import" });
+            const message = err instanceof Error ? err.message : String(err);
+            failures.push({ row: rowNum, field: "Unknown", reason: message });
             console.error("Error importing member record:", err);
           }
         }
