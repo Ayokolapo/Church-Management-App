@@ -367,7 +367,7 @@ export interface PaginatedResult<T> {
 }
 
 // Slim member type for dropdowns and attendance (no expensive attendance subqueries)
-export type MemberSlim = Pick<Member, 'id' | 'firstName' | 'lastName' | 'mobilePhone' | 'email' | 'status' | 'cluster'>;
+export type MemberSlim = Pick<Member, 'id' | 'firstName' | 'lastName' | 'mobilePhone' | 'email' | 'status' | 'cluster' | 'cell'>;
 
 // SMTP Settings - single global row
 export const smtpSettings = pgTable("smtp_settings", {

@@ -306,6 +306,7 @@ export class DatabaseStorage implements IStorage {
         email: members.email,
         status: members.status,
         cluster: members.cluster,
+        cell: members.cell,
       })
       .from(members)
       .orderBy(asc(members.firstName), asc(members.lastName));
