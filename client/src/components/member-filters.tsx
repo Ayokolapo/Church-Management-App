@@ -36,6 +36,10 @@ export function MemberFilters({ filters, onFiltersChange }: MemberFiltersProps) 
     });
   };
 
+  const ALL = "__all__";
+  const toSelectValue = (v: string) => v || ALL;
+  const fromSelectValue = (v: string) => v === ALL ? "" : v;
+
   return (
     <Card>
       <CardContent className="p-4">
@@ -50,14 +54,14 @@ export function MemberFilters({ filters, onFiltersChange }: MemberFiltersProps) 
           <div className="space-y-2">
             <Label>Status</Label>
             <Select
-              value={filters.status}
-              onValueChange={(value) => onFiltersChange({ ...filters, status: value })}
+              value={toSelectValue(filters.status)}
+              onValueChange={(value) => onFiltersChange({ ...filters, status: fromSelectValue(value) })}
             >
               <SelectTrigger data-testid="select-filter-status">
                 <SelectValue placeholder="All Statuses" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">All Statuses</SelectItem>
+                <SelectItem value={ALL}>All Statuses</SelectItem>
                 <SelectItem value="Crowd">Crowd</SelectItem>
                 <SelectItem value="Potential">Potential</SelectItem>
                 <SelectItem value="Committed">Committed</SelectItem>
@@ -71,14 +75,14 @@ export function MemberFilters({ filters, onFiltersChange }: MemberFiltersProps) 
           <div className="space-y-2">
             <Label>Gender</Label>
             <Select
-              value={filters.gender}
-              onValueChange={(value) => onFiltersChange({ ...filters, gender: value })}
+              value={toSelectValue(filters.gender)}
+              onValueChange={(value) => onFiltersChange({ ...filters, gender: fromSelectValue(value) })}
             >
               <SelectTrigger data-testid="select-filter-gender">
                 <SelectValue placeholder="All Genders" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">All Genders</SelectItem>
+                <SelectItem value={ALL}>All Genders</SelectItem>
                 <SelectItem value="Male">Male</SelectItem>
                 <SelectItem value="Female">Female</SelectItem>
               </SelectContent>
@@ -88,14 +92,14 @@ export function MemberFilters({ filters, onFiltersChange }: MemberFiltersProps) 
           <div className="space-y-2">
             <Label>Occupation</Label>
             <Select
-              value={filters.occupation}
-              onValueChange={(value) => onFiltersChange({ ...filters, occupation: value })}
+              value={toSelectValue(filters.occupation)}
+              onValueChange={(value) => onFiltersChange({ ...filters, occupation: fromSelectValue(value) })}
             >
               <SelectTrigger data-testid="select-filter-occupation">
                 <SelectValue placeholder="All Occupations" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">All Occupations</SelectItem>
+                <SelectItem value={ALL}>All Occupations</SelectItem>
                 <SelectItem value="Students">Students</SelectItem>
                 <SelectItem value="Workers">Workers</SelectItem>
                 <SelectItem value="Unemployed">Unemployed</SelectItem>
@@ -107,14 +111,14 @@ export function MemberFilters({ filters, onFiltersChange }: MemberFiltersProps) 
           <div className="space-y-2">
             <Label>Cluster</Label>
             <Select
-              value={filters.cluster}
-              onValueChange={(value) => onFiltersChange({ ...filters, cluster: value })}
+              value={toSelectValue(filters.cluster)}
+              onValueChange={(value) => onFiltersChange({ ...filters, cluster: fromSelectValue(value) })}
             >
               <SelectTrigger data-testid="select-filter-cluster">
                 <SelectValue placeholder="All Clusters" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">All Clusters</SelectItem>
+                <SelectItem value={ALL}>All Clusters</SelectItem>
                 {clusters?.map((cluster) => (
                   <SelectItem key={cluster.id} value={cluster.name}>
                     {cluster.name}
