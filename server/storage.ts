@@ -264,40 +264,6 @@ export class DatabaseStorage implements IStorage {
         branchId: members.branchId,
         createdAt: members.createdAt,
         updatedAt: members.updatedAt,
-        lastAttended: sql<string | null>`(
-          SELECT MAX(latest_date)::text
-          FROM (
-            SELECT MAX(service_date) AS latest_date
-            FROM ${attendance}
-            WHERE ${attendance.memberId} = ${members.id}
-            AND ${attendance.status} = 'Present'
-            UNION ALL
-            SELECT MAX(meeting_date) AS latest_date
-            FROM ${cellAttendance}
-            WHERE ${cellAttendance.memberId} = ${members.id}
-          ) _dates
-        )`,
-        timesAttended: sql<number>`(
-          SELECT COUNT(*)::int FROM ${attendance}
-          WHERE ${attendance.memberId} = ${members.id}
-          AND ${attendance.status} = 'Present'
-        ) + (
-          SELECT COUNT(*)::int FROM ${cellAttendance}
-          WHERE ${cellAttendance.memberId} = ${members.id}
-        )`,
-        timeSinceAttended: sql<number | null>`(
-          SELECT EXTRACT(DAY FROM NOW() - MAX(latest_date))::int
-          FROM (
-            SELECT MAX(service_date) AS latest_date
-            FROM ${attendance}
-            WHERE ${attendance.memberId} = ${members.id}
-            AND ${attendance.status} = 'Present'
-            UNION ALL
-            SELECT MAX(meeting_date) AS latest_date
-            FROM ${cellAttendance}
-            WHERE ${cellAttendance.memberId} = ${members.id}
-          ) _dates
-        )`,
       })
       .from(members)
       .orderBy(asc(members.firstName), asc(members.lastName))
@@ -308,7 +274,57 @@ export class DatabaseStorage implements IStorage {
       query = query.where(whereClause) as any;
     }
 
-    const data = await query;
+    const rows = await query;
+
+    if (rows.length === 0) {
+      return { data: [], total, page, limit, totalPages: Math.ceil(total / limit) };
+    }
+
+    const memberIds = rows.map(r => r.id);
+
+    // Fetch service attendance stats for this page of members
+    const serviceStats = await db
+      .select({
+        memberId: attendance.memberId,
+        lastDate: sql<string>`MAX(${attendance.serviceDate})::text`,
+        count: sql<number>`COUNT(*)::int`,
+      })
+      .from(attendance)
+      .where(and(inArray(attendance.memberId, memberIds), eq(attendance.status, 'Present')))
+      .groupBy(attendance.memberId);
+
+    // Fetch cell attendance stats for this page of members
+    const cellStats = await db
+      .select({
+        memberId: cellAttendance.memberId,
+        lastDate: sql<string>`MAX(${cellAttendance.meetingDate})::text`,
+        count: sql<number>`COUNT(*)::int`,
+      })
+      .from(cellAttendance)
+      .where(inArray(cellAttendance.memberId, memberIds))
+      .groupBy(cellAttendance.memberId);
+
+    const serviceMap = new Map(serviceStats.map(s => [s.memberId, s]));
+    const cellMap = new Map(cellStats.map(s => [s.memberId, s]));
+
+    const data: MemberWithAttendanceStats[] = rows.map(member => {
+      const svc = serviceMap.get(member.id);
+      const cell = cellMap.get(member.id);
+      const lastSvc = svc?.lastDate ?? null;
+      const lastCell = cell?.lastDate ?? null;
+      let lastAttended: string | null = null;
+      if (lastSvc && lastCell) {
+        lastAttended = lastSvc > lastCell ? lastSvc : lastCell;
+      } else {
+        lastAttended = lastSvc ?? lastCell;
+      }
+      const timesAttended = (svc?.count ?? 0) + (cell?.count ?? 0);
+      const timeSinceAttended = lastAttended
+        ? Math.floor((Date.now() - new Date(lastAttended).getTime()) / 86400000)
+        : null;
+      return { ...member, lastAttended, timesAttended, timeSinceAttended };
+    });
+
     return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
