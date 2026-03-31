@@ -535,7 +535,7 @@ export class DatabaseStorage implements IStorage {
       throw new Error("First timer not found");
     }
 
-    if (firstTimer.convertedToMember) {
+    if (firstTimer.convertedToMember && firstTimer.memberId) {
       throw new Error("First timer already converted");
     }
 

@@ -62,14 +62,14 @@ export function FirstTimerTable({ firstTimers, onConvert, isConverting }: FirstT
                 {formatDistanceToNow(new Date(firstTimer.createdAt), { addSuffix: true })}
               </TableCell>
               <TableCell>
-                {firstTimer.convertedToMember ? (
+                {firstTimer.convertedToMember && firstTimer.memberId ? (
                   <Badge variant="secondary">Converted</Badge>
                 ) : (
                   <Badge variant="outline">Pending</Badge>
                 )}
               </TableCell>
               <TableCell className="text-right">
-                {!firstTimer.convertedToMember && (
+                {!(firstTimer.convertedToMember && firstTimer.memberId) && (
                   <Button
                     size="sm"
                     onClick={() => onConvert(firstTimer.id)}
