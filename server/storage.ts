@@ -265,22 +265,38 @@ export class DatabaseStorage implements IStorage {
         createdAt: members.createdAt,
         updatedAt: members.updatedAt,
         lastAttended: sql<string | null>`(
-          SELECT MAX(service_date)::text
-          FROM ${attendance}
-          WHERE ${attendance.memberId} = ${members.id}
-          AND ${attendance.status} = 'Present'
+          SELECT MAX(latest_date)::text
+          FROM (
+            SELECT MAX(service_date) AS latest_date
+            FROM ${attendance}
+            WHERE ${attendance.memberId} = ${members.id}
+            AND ${attendance.status} = 'Present'
+            UNION ALL
+            SELECT MAX(meeting_date) AS latest_date
+            FROM ${cellAttendance}
+            WHERE ${cellAttendance.memberId} = ${members.id}
+          ) _dates
         )`,
         timesAttended: sql<number>`(
-          SELECT COUNT(*)::int
-          FROM ${attendance}
+          SELECT COUNT(*)::int FROM ${attendance}
           WHERE ${attendance.memberId} = ${members.id}
           AND ${attendance.status} = 'Present'
+        ) + (
+          SELECT COUNT(*)::int FROM ${cellAttendance}
+          WHERE ${cellAttendance.memberId} = ${members.id}
         )`,
         timeSinceAttended: sql<number | null>`(
-          SELECT EXTRACT(DAY FROM NOW() - MAX(service_date))::int
-          FROM ${attendance}
-          WHERE ${attendance.memberId} = ${members.id}
-          AND ${attendance.status} = 'Present'
+          SELECT EXTRACT(DAY FROM NOW() - MAX(latest_date))::int
+          FROM (
+            SELECT MAX(service_date) AS latest_date
+            FROM ${attendance}
+            WHERE ${attendance.memberId} = ${members.id}
+            AND ${attendance.status} = 'Present'
+            UNION ALL
+            SELECT MAX(meeting_date) AS latest_date
+            FROM ${cellAttendance}
+            WHERE ${cellAttendance.memberId} = ${members.id}
+          ) _dates
         )`,
       })
       .from(members)
