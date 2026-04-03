@@ -2,8 +2,7 @@
  * One-time utility: set a password for an existing user account.
  * Usage:  npx tsx --env-file=.env scripts/set-password.ts <email> <password>
  */
-import { scrypt, randomBytes } from "crypto";
-import { promisify } from "util";
+import bcrypt from "bcryptjs";
 import { drizzle } from "drizzle-orm/neon-serverless";
 import { neonConfig, Pool } from "@neondatabase/serverless";
 import ws from "ws";
@@ -12,12 +11,8 @@ import { eq } from "drizzle-orm";
 
 neonConfig.webSocketConstructor = ws;
 
-const scryptAsync = promisify(scrypt);
-
 async function hashPassword(password: string): Promise<string> {
-  const salt = randomBytes(16).toString("hex");
-  const buf = (await scryptAsync(password, salt, 64)) as Buffer;
-  return `${buf.toString("hex")}.${salt}`;
+  return bcrypt.hash(password, 12);
 }
 
 async function main() {
