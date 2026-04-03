@@ -216,13 +216,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Log the user in via passport session
-      req.login({ claims: { sub: user.id, email: user.email }, expires_at: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60 }, (err) => {
+      req.login({ claims: { sub: user.id, email: user.email }, expires_at: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60 }, async (err) => {
         if (err) return res.status(500).json({ error: "Login failed" });
+        await storage.incrementLoginCount(user.id);
         res.json({ message: "Login successful" });
       });
     } catch (error: any) {
       console.error("Error during signin:", error);
       res.status(500).json({ error: "Sign in failed" });
+    }
+  });
+
+  // Mark onboarding tour as completed for the current user
+  app.post("/api/onboarding/complete", isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req.user as any)?.claims?.sub;
+      if (!userId) return res.status(401).json({ error: "Unauthorized" });
+      await storage.completeOnboarding(userId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error completing onboarding:", error);
+      res.status(500).json({ error: "Failed to update onboarding status" });
     }
   });
 

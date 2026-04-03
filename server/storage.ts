@@ -157,6 +157,8 @@ export interface IStorage {
   // User signup
   getUserByEmail(email: string): Promise<User | undefined>;
   createSignupUser(data: { firstName: string; lastName: string; gender: string; address: string; phoneNumber: string; email: string; branchId: string; passwordHash: string }): Promise<User>;
+  incrementLoginCount(userId: string): Promise<void>;
+  completeOnboarding(userId: string): Promise<void>;
 
   // Role Permissions
   getRolePermissions(): Promise<Record<string, string[]>>;
@@ -1332,6 +1334,20 @@ export class DatabaseStorage implements IStorage {
       passwordHash: data.passwordHash,
     }).returning();
     return user;
+  }
+
+  async incrementLoginCount(userId: string): Promise<void> {
+    await db
+      .update(users)
+      .set({ loginCount: sql`${users.loginCount} + 1` })
+      .where(eq(users.id, userId));
+  }
+
+  async completeOnboarding(userId: string): Promise<void> {
+    await db
+      .update(users)
+      .set({ onboardingCompleted: true })
+      .where(eq(users.id, userId));
   }
 
   async getRolePermissions(): Promise<Record<string, string[]>> {

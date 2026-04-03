@@ -21,41 +21,49 @@ const mainMenuItems = [
     title: "Dashboard",
     url: "/",
     icon: Home,
+    onboardingId: "nav-dashboard",
   },
   {
     title: "Members",
     url: "/members",
     icon: Users,
+    onboardingId: "nav-members",
   },
   {
     title: "First Timers",
     url: "/first-timers",
     icon: UserPlus,
+    onboardingId: "nav-first-timers",
   },
   {
     title: "Attendance",
     url: "/attendance",
     icon: CalendarCheck,
+    onboardingId: "nav-attendance",
   },
   {
     title: "Cells",
     url: "/cells",
     icon: Network,
+    onboardingId: "nav-cells",
   },
   {
     title: "Outreach",
     url: "/outreach",
     icon: Megaphone,
+    onboardingId: "nav-outreach",
   },
   {
     title: "Follow-up Tasks",
     url: "/follow-up-tasks",
     icon: ClipboardList,
+    onboardingId: "nav-follow-up-tasks",
   },
   {
     title: "Communications",
     url: "/communications",
     icon: MessageSquare,
+    onboardingId: "nav-communications",
   },
 ];
 
@@ -64,21 +72,25 @@ const adminMenuItems = [
     title: "Branches",
     url: "/branches",
     icon: Building2,
+    onboardingId: "nav-branches",
   },
   {
     title: "User Management",
     url: "/users",
     icon: UserCog,
+    onboardingId: "nav-users",
   },
   {
     title: "Roles & Permissions",
     url: "/roles-permissions",
     icon: ShieldCheck,
+    onboardingId: "nav-roles-permissions",
   },
   {
     title: "Admin Settings",
     url: "/admin-settings",
     icon: Settings,
+    onboardingId: "nav-admin-settings",
   },
 ];
 
@@ -113,7 +125,7 @@ export function AppSidebar() {
               {mainMenuItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild isActive={location === item.url}>
-                    <Link href={item.url} data-testid={`link-${item.title.toLowerCase().replace(' ', '-')}`}>
+                    <Link href={item.url} data-testid={`link-${item.title.toLowerCase().replace(' ', '-')}`} data-onboarding={item.onboardingId}>
                       <item.icon className="w-4 h-4" />
                       <span>{item.title}</span>
                     </Link>
@@ -135,7 +147,7 @@ export function AppSidebar() {
                   {adminMenuItems.map((item) => (
                     <SidebarMenuItem key={item.title}>
                       <SidebarMenuButton asChild isActive={location === item.url}>
-                        <Link href={item.url} data-testid={`link-${item.title.toLowerCase().replace(' ', '-')}`}>
+                        <Link href={item.url} data-testid={`link-${item.title.toLowerCase().replace(' ', '-')}`} data-onboarding={item.onboardingId}>
                           <item.icon className="w-4 h-4" />
                           <span>{item.title}</span>
                         </Link>

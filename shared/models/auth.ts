@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { index, jsonb, pgTable, timestamp, varchar } from "drizzle-orm/pg-core";
+import { boolean, index, integer, jsonb, pgTable, timestamp, varchar } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -28,6 +28,8 @@ export const users = pgTable("users", {
   phoneNumber: varchar("phone_number"),
   branchId: varchar("branch_id"),
   passwordHash: varchar("password_hash"),
+  loginCount: integer("login_count").default(0).notNull(),
+  onboardingCompleted: boolean("onboarding_completed").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

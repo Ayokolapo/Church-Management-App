@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
+import { OnboardingTour } from "@/components/onboarding-tour";
 import { useAuth } from "@/hooks/use-auth";
 import Dashboard from "@/pages/dashboard";
 import Members from "@/pages/members";
@@ -121,6 +122,7 @@ function AppShell() {
                 </main>
               </div>
             </div>
+            <OnboardingTour />
           </SidebarProvider>
         )}
       </Route>
