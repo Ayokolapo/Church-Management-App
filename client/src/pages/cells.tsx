@@ -17,6 +17,7 @@ import { z } from "zod";
 import { format } from "date-fns";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { CellWithMembers, MemberSlim, CellAttendanceWithMember, ClusterWithCells, UserWithRole } from "@shared/schema";
+import { CellTour } from "@/components/cell-tour";
 
 const cellFormSchema = z.object({
   name: z.string().min(1, "Cell name is required"),
@@ -278,7 +279,7 @@ export default function Cells() {
           <h1 className="text-2xl font-semibold mb-2" data-testid="text-page-title">Cells</h1>
           <p className="text-muted-foreground">Manage small groups and cell meetings</p>
         </div>
-        <Button onClick={() => setShowCellDialog(true)} data-testid="button-add-cell">
+        <Button onClick={() => setShowCellDialog(true)} data-testid="button-add-cell" data-cell-tour="cell-tour-add">
           <Plus className="w-4 h-4 mr-2" />
           Add Cell
         </Button>
@@ -292,6 +293,7 @@ export default function Cells() {
           onChange={(e) => setSearchTerm(e.target.value)}
           className="pl-10"
           data-testid="input-search"
+          data-cell-tour="cell-tour-search"
         />
       </div>
 
@@ -311,7 +313,7 @@ export default function Cells() {
         </Card>
       ) : (
         <div className="space-y-4">
-          {Object.entries(filteredGroupedCells).map(([clusterName, clusterCells]) => {
+          {Object.entries(filteredGroupedCells).map(([clusterName, clusterCells], clusterIndex) => {
             const isExpanded = !collapsedClusters.has(clusterName);
 
             return (
@@ -320,6 +322,7 @@ export default function Cells() {
                   className="cursor-pointer hover-elevate"
                   onClick={() => toggleCluster(clusterName)}
                   data-testid={`cluster-header-${clusterName.toLowerCase().replace(/\s+/g, '-')}`}
+                  {...(clusterIndex === 0 ? { "data-cell-tour": "cell-tour-cluster" } : {})}
                 >
                   <CardTitle className="flex items-center gap-2 text-lg">
                     {isExpanded ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
@@ -332,7 +335,9 @@ export default function Cells() {
                 {isExpanded && (
                   <CardContent>
                     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                      {clusterCells.map(cell => (
+                      {clusterCells.map((cell, cellIndex) => {
+                        const isFirstCell = clusterIndex === 0 && cellIndex === 0;
+                        return (
                         <Card key={cell.id} className="border" data-testid={`card-cell-${cell.id}`}>
                           <CardContent className="p-4">
                             <div className="flex items-start justify-between mb-3">
@@ -353,6 +358,7 @@ export default function Cells() {
                                 size="sm"
                                 onClick={() => handleViewMembers(cell)}
                                 data-testid={`button-view-members-${cell.id}`}
+                                {...(isFirstCell ? { "data-cell-tour": "cell-tour-members" } : {})}
                               >
                                 <Users className="w-4 h-4 mr-1" />
                                 Members
@@ -362,6 +368,7 @@ export default function Cells() {
                                 size="sm"
                                 onClick={() => handleOpenAttendance(cell)}
                                 data-testid={`button-attendance-${cell.id}`}
+                                {...(isFirstCell ? { "data-cell-tour": "cell-tour-attendance" } : {})}
                               >
                                 <Calendar className="w-4 h-4 mr-1" />
                                 Attendance
@@ -371,6 +378,7 @@ export default function Cells() {
                                 size="icon"
                                 onClick={() => handleEditCell(cell)}
                                 data-testid={`button-edit-${cell.id}`}
+                                {...(isFirstCell ? { "data-cell-tour": "cell-tour-edit" } : {})}
                               >
                                 <Edit className="w-4 h-4" />
                               </Button>
@@ -379,13 +387,15 @@ export default function Cells() {
                                 size="icon"
                                 onClick={() => deleteCellMutation.mutate(cell.id)}
                                 data-testid={`button-delete-${cell.id}`}
+                                {...(isFirstCell ? { "data-cell-tour": "cell-tour-delete" } : {})}
                               >
                                 <Trash2 className="w-4 h-4" />
                               </Button>
                             </div>
                           </CardContent>
                         </Card>
-                      ))}
+                        );
+                      })}
                     </div>
                   </CardContent>
                 )}
@@ -517,6 +527,8 @@ export default function Cells() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <CellTour cellsLoaded={!cellsLoading && !!cells} />
 
       <Dialog open={showAttendanceDialog} onOpenChange={setShowAttendanceDialog}>
         <DialogContent className="max-w-lg">
