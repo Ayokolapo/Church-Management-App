@@ -372,6 +372,7 @@ export type MemberSlim = Pick<Member, 'id' | 'firstName' | 'lastName' | 'mobileP
 // SMTP Settings - single global row
 export const smtpSettings = pgTable("smtp_settings", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  provider: text("provider").notNull().default('smtp'), // 'smtp' | 'resend'
   host: text("host").notNull().default(''),
   port: integer("port").notNull().default(587),
   username: text("username").notNull().default(''),
@@ -385,9 +386,10 @@ export const smtpSettings = pgTable("smtp_settings", {
 });
 
 export const insertSmtpSettingsSchema = createInsertSchema(smtpSettings, {
-  host: z.string().min(1, "SMTP host is required"),
+  provider: z.enum(['smtp', 'resend']).default('smtp'),
+  host: z.string(),
   port: z.number().int().min(1).max(65535),
-  username: z.string().min(1, "Username is required"),
+  username: z.string(),
   encryptedPassword: z.string(),
   fromEmail: z.string().email("Invalid from email"),
   fromName: z.string().min(1, "From name is required"),

@@ -11,7 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
-import { Settings, Mail, Eye, RotateCcw, Save, Send, Wifi } from "lucide-react";
+import { Settings, Mail, Eye, RotateCcw, Save, Send, Wifi, Key } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 
 // ---------------------------------------------------------------------------
@@ -19,6 +19,7 @@ import { apiRequest } from "@/lib/queryClient";
 // ---------------------------------------------------------------------------
 interface SmtpSettings {
   id: string;
+  provider: "smtp" | "resend";
   host: string;
   port: number;
   username: string;
@@ -58,6 +59,7 @@ export default function AdminSettings() {
 
   // ---- SMTP state ----
   const [smtpForm, setSmtpForm] = useState({
+    provider: "smtp" as "smtp" | "resend",
     host: "",
     port: "587",
     username: "",
@@ -89,10 +91,11 @@ export default function AdminSettings() {
   useEffect(() => {
     if (smtpSettings) {
       setSmtpForm({
+        provider: smtpSettings.provider ?? "smtp",
         host: smtpSettings.host,
         port: String(smtpSettings.port),
         username: smtpSettings.username,
-        password: "", // never pre-fill password
+        password: "", // never pre-fill password/key
         fromEmail: smtpSettings.fromEmail,
         fromName: smtpSettings.fromName,
         security: smtpSettings.security,
@@ -150,6 +153,7 @@ export default function AdminSettings() {
   const testConnectionMutation = useMutation({
     mutationFn: async () => {
       return apiRequest("POST", "/api/admin/smtp-settings/test", {
+        provider: smtpForm.provider,
         host: smtpForm.host,
         port: smtpForm.port,
         username: smtpForm.username,
@@ -235,104 +239,172 @@ export default function AdminSettings() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Mail className="w-5 h-5 text-orange-500" />
-            Email Configuration (SMTP)
+            Email Configuration
           </CardTitle>
-          <CardDescription>Configure your outgoing mail server settings.</CardDescription>
+          <CardDescription>Configure your outgoing email provider.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="smtp-host">SMTP Host</Label>
-              <Input
-                id="smtp-host"
-                placeholder="smtp.gmail.com"
-                value={smtpForm.host}
-                onChange={e => setSmtpForm(p => ({ ...p, host: e.target.value }))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="smtp-port">Port</Label>
-              <Input
-                id="smtp-port"
-                placeholder="587"
-                value={smtpForm.port}
-                onChange={e => setSmtpForm(p => ({ ...p, port: e.target.value }))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="smtp-user">Username</Label>
-              <Input
-                id="smtp-user"
-                placeholder="your-email@gmail.com"
-                value={smtpForm.username}
-                onChange={e => setSmtpForm(p => ({ ...p, username: e.target.value }))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="smtp-pass">
-                Password
-                {smtpSettings?.hasPassword && !smtpForm.password && (
-                  <span className="ml-2 text-xs text-muted-foreground">(leave blank to keep existing)</span>
-                )}
-              </Label>
-              <Input
-                id="smtp-pass"
-                type="password"
-                placeholder="App password"
-                value={smtpForm.password}
-                onChange={e => setSmtpForm(p => ({ ...p, password: e.target.value }))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="smtp-from-email">From Email</Label>
-              <Input
-                id="smtp-from-email"
-                placeholder="noreply@yourchurch.com"
-                value={smtpForm.fromEmail}
-                onChange={e => setSmtpForm(p => ({ ...p, fromEmail: e.target.value }))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="smtp-from-name">From Name</Label>
-              <Input
-                id="smtp-from-name"
-                placeholder="The Waypoint"
-                value={smtpForm.fromName}
-                onChange={e => setSmtpForm(p => ({ ...p, fromName: e.target.value }))}
-              />
-            </div>
+          {/* Provider selector */}
+          <div className="space-y-2">
+            <Label>Email Provider</Label>
+            <Select
+              value={smtpForm.provider}
+              onValueChange={val => setSmtpForm(p => ({ ...p, provider: val as "smtp" | "resend", password: "" }))}
+            >
+              <SelectTrigger className="max-w-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="smtp">SMTP (custom mail server)</SelectItem>
+                <SelectItem value="resend">Resend (recommended)</SelectItem>
+              </SelectContent>
+            </Select>
+            {smtpForm.provider === "resend" && (
+              <p className="text-xs text-muted-foreground">
+                Resend sends via HTTPS — works on all hosting providers including DigitalOcean.
+                Get your API key at <span className="font-mono">resend.com</span>.
+              </p>
+            )}
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center">
-            <div className="space-y-2">
-              <Label>Security</Label>
-              <Select
-                value={smtpForm.security}
-                onValueChange={val =>
-                  setSmtpForm(p => ({ ...p, security: val as "starttls" | "ssl" | "none" }))
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="starttls">STARTTLS — Port 587</SelectItem>
-                  <SelectItem value="ssl">SSL — Port 465</SelectItem>
-                  <SelectItem value="none">None — Port 25</SelectItem>
-                </SelectContent>
-              </Select>
+          {/* Resend fields */}
+          {smtpForm.provider === "resend" && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="resend-key">
+                  <Key className="inline w-3.5 h-3.5 mr-1" />
+                  Resend API Key
+                  {smtpSettings?.hasPassword && smtpSettings.provider === "resend" && !smtpForm.password && (
+                    <span className="ml-2 text-xs text-muted-foreground">(leave blank to keep existing)</span>
+                  )}
+                </Label>
+                <Input
+                  id="resend-key"
+                  type="password"
+                  placeholder="re_xxxxxxxxxxxxxxxx"
+                  value={smtpForm.password}
+                  onChange={e => setSmtpForm(p => ({ ...p, password: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="resend-from-email">From Email</Label>
+                <Input
+                  id="resend-from-email"
+                  placeholder="noreply@yourchurch.com"
+                  value={smtpForm.fromEmail}
+                  onChange={e => setSmtpForm(p => ({ ...p, fromEmail: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="resend-from-name">From Name</Label>
+                <Input
+                  id="resend-from-name"
+                  placeholder="The Waypoint"
+                  value={smtpForm.fromName}
+                  onChange={e => setSmtpForm(p => ({ ...p, fromName: e.target.value }))}
+                />
+              </div>
             </div>
+          )}
 
-            <div className="flex items-center gap-3 pt-6">
-              <Switch
-                id="smtp-enabled"
-                checked={smtpForm.enabled}
-                onCheckedChange={val => setSmtpForm(p => ({ ...p, enabled: val }))}
-              />
-              <Label htmlFor="smtp-enabled" className="cursor-pointer">
-                {smtpForm.enabled ? "Email sending enabled" : "Email sending disabled"}
-              </Label>
-            </div>
+          {/* SMTP fields */}
+          {smtpForm.provider === "smtp" && (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="smtp-host">SMTP Host</Label>
+                  <Input
+                    id="smtp-host"
+                    placeholder="smtp.gmail.com"
+                    value={smtpForm.host}
+                    onChange={e => setSmtpForm(p => ({ ...p, host: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="smtp-port">Port</Label>
+                  <Input
+                    id="smtp-port"
+                    placeholder="587"
+                    value={smtpForm.port}
+                    onChange={e => setSmtpForm(p => ({ ...p, port: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="smtp-user">Username</Label>
+                  <Input
+                    id="smtp-user"
+                    placeholder="your-email@gmail.com"
+                    value={smtpForm.username}
+                    onChange={e => setSmtpForm(p => ({ ...p, username: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="smtp-pass">
+                    Password
+                    {smtpSettings?.hasPassword && smtpSettings.provider !== "resend" && !smtpForm.password && (
+                      <span className="ml-2 text-xs text-muted-foreground">(leave blank to keep existing)</span>
+                    )}
+                  </Label>
+                  <Input
+                    id="smtp-pass"
+                    type="password"
+                    placeholder="App password"
+                    value={smtpForm.password}
+                    onChange={e => setSmtpForm(p => ({ ...p, password: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="smtp-from-email">From Email</Label>
+                  <Input
+                    id="smtp-from-email"
+                    placeholder="noreply@yourchurch.com"
+                    value={smtpForm.fromEmail}
+                    onChange={e => setSmtpForm(p => ({ ...p, fromEmail: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="smtp-from-name">From Name</Label>
+                  <Input
+                    id="smtp-from-name"
+                    placeholder="The Waypoint"
+                    value={smtpForm.fromName}
+                    onChange={e => setSmtpForm(p => ({ ...p, fromName: e.target.value }))}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center">
+                <div className="space-y-2">
+                  <Label>Security</Label>
+                  <Select
+                    value={smtpForm.security}
+                    onValueChange={val =>
+                      setSmtpForm(p => ({ ...p, security: val as "starttls" | "ssl" | "none" }))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="starttls">STARTTLS — Port 587</SelectItem>
+                      <SelectItem value="ssl">SSL — Port 465</SelectItem>
+                      <SelectItem value="none">None — Port 25</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </>
+          )}
+
+          <div className="flex items-center gap-3">
+            <Switch
+              id="smtp-enabled"
+              checked={smtpForm.enabled}
+              onCheckedChange={val => setSmtpForm(p => ({ ...p, enabled: val }))}
+            />
+            <Label htmlFor="smtp-enabled" className="cursor-pointer">
+              {smtpForm.enabled ? "Email sending enabled" : "Email sending disabled"}
+            </Label>
           </div>
 
           <Separator />
@@ -349,10 +421,14 @@ export default function AdminSettings() {
             <Button
               variant="outline"
               onClick={() => testConnectionMutation.mutate()}
-              disabled={testConnectionMutation.isPending || !smtpForm.host || !smtpForm.username}
+              disabled={
+                testConnectionMutation.isPending ||
+                (smtpForm.provider === "smtp" && (!smtpForm.host || !smtpForm.username)) ||
+                (smtpForm.provider === "resend" && !smtpForm.password && !smtpSettings?.hasPassword)
+              }
             >
               <Wifi className="w-4 h-4 mr-2" />
-              {testConnectionMutation.isPending ? "Testing…" : "Test Connection"}
+              {testConnectionMutation.isPending ? "Testing…" : smtpForm.provider === "resend" ? "Verify API Key" : "Test Connection"}
             </Button>
           </div>
         </CardContent>

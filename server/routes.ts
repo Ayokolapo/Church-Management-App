@@ -9,6 +9,7 @@ import { stringify } from "csv-stringify/sync";
 import { setupAuth, registerAuthRoutes, isAuthenticated, requireRole, requirePermission, invalidatePermissionsCache } from "./replit_integrations/auth";
 import bcrypt from "bcryptjs";
 import nodemailer from "nodemailer";
+import { Resend } from "resend";
 import crypto from "crypto";
 
 // ---------------------------------------------------------------------------
@@ -1636,16 +1637,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // POST /api/admin/smtp-settings — save settings (encrypt password if provided)
+  // POST /api/admin/smtp-settings — save settings (encrypt password/API key if provided)
   app.post("/api/admin/smtp-settings", isAuthenticated, requireRole("super_admin", "branch_admin"), async (req, res) => {
     try {
-      const { host, port, username, password, fromEmail, fromName, security, enabled } = req.body;
+      const { provider, host, port, username, password, fromEmail, fromName, security, enabled } = req.body;
+      const resolvedProvider: "smtp" | "resend" = provider === "resend" ? "resend" : "smtp";
 
-      if (!host || !username || !fromEmail || !fromName) {
-        return res.status(400).json({ error: "Host, username, from email, and from name are required" });
+      if (!fromEmail || !fromName) {
+        return res.status(400).json({ error: "From email and from name are required" });
       }
 
-      // If no new password provided, keep the existing encrypted one
+      if (resolvedProvider === "smtp" && (!host || !username)) {
+        return res.status(400).json({ error: "Host and username are required for SMTP" });
+      }
+
+      // If no new password/key provided, keep the existing encrypted one
       let encryptedPassword = "";
       if (password) {
         encryptedPassword = encryptPassword(password);
@@ -1655,13 +1661,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const saved = await storage.upsertSmtpSettings({
-        host,
-        port: parseInt(port) || 587,
-        username,
+        provider: resolvedProvider,
+        host: resolvedProvider === "resend" ? "" : (host || ""),
+        port: resolvedProvider === "resend" ? 0 : (parseInt(port) || 587),
+        username: resolvedProvider === "resend" ? "" : (username || ""),
         encryptedPassword,
         fromEmail,
         fromName,
-        security: security || "starttls",
+        security: resolvedProvider === "resend" ? "none" : (security || "starttls"),
         enabled: enabled === true || enabled === "true",
       });
 
@@ -1672,16 +1679,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // POST /api/admin/smtp-settings/test — verify SMTP credentials work
+  // POST /api/admin/smtp-settings/test — verify credentials work
   app.post("/api/admin/smtp-settings/test", isAuthenticated, requireRole("super_admin", "branch_admin"), async (req, res) => {
     try {
-      const { host, port, username, password, security } = req.body;
+      const { provider, host, port, username, password, security } = req.body;
 
-      if (!host || !username) {
-        return res.status(400).json({ error: "Host and username are required" });
-      }
-
-      // Determine if we use the supplied password or the stored one
+      // Resolve the password/key: use supplied value or fall back to the stored one
       let resolvedPassword = password as string | undefined;
       if (!resolvedPassword) {
         const existing = await storage.getSmtpSettings();
@@ -1690,8 +1693,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
+      if (provider === "resend") {
+        if (!resolvedPassword) {
+          return res.status(400).json({ error: "Resend API key is required" });
+        }
+        const resend = new Resend(resolvedPassword);
+        // Validate by listing API keys — throws on invalid key
+        await resend.apiKeys.list();
+        return res.json({ success: true, message: "Resend API key is valid." });
+      }
+
+      // SMTP path
+      if (!host || !username) {
+        return res.status(400).json({ error: "Host and username are required" });
+      }
+
       const portNum = parseInt(port) || 587;
-      const secure = security === "ssl"; // SSL=true, STARTTLS/none=false
+      const secure = security === "ssl";
 
       const transporter = nodemailer.createTransport({
         host,
@@ -1718,26 +1736,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const settings = await storage.getSmtpSettings();
       if (!settings || !settings.enabled) {
-        return res.status(400).json({ error: "SMTP is not configured or disabled" });
+        return res.status(400).json({ error: "Email is not configured or disabled" });
       }
 
-      const password = decryptPassword(settings.encryptedPassword);
-      const secure = settings.security === "ssl";
-
-      const transporter = nodemailer.createTransport({
-        host: settings.host,
-        port: settings.port,
-        secure,
-        auth: { user: settings.username, pass: password },
-        tls: { rejectUnauthorized: false },
-      });
-
-      await transporter.sendMail({
+      const decryptedKey = decryptPassword(settings.encryptedPassword);
+      const mailOptions = {
         from: `"${settings.fromName}" <${settings.fromEmail}>`,
         to: toEmail,
         subject: "Test Email from The Waypoint CMS",
-        html: `<p>This is a test email from <strong>The Waypoint Church Management System</strong>.</p><p>If you received this, your SMTP configuration is working correctly.</p>`,
-      });
+        html: `<p>This is a test email from <strong>The Waypoint Church Management System</strong>.</p><p>If you received this, your email configuration is working correctly.</p>`,
+      };
+
+      if (settings.provider === "resend") {
+        const resend = new Resend(decryptedKey);
+        const { error } = await resend.emails.send({
+          from: mailOptions.from,
+          to: [toEmail],
+          subject: mailOptions.subject,
+          html: mailOptions.html,
+        });
+        if (error) throw new Error(error.message);
+      } else {
+        const secure = settings.security === "ssl";
+        const transporter = nodemailer.createTransport({
+          host: settings.host,
+          port: settings.port,
+          secure,
+          auth: { user: settings.username, pass: decryptedKey },
+          tls: { rejectUnauthorized: false },
+        });
+        await transporter.sendMail(mailOptions);
+      }
 
       res.json({ success: true, message: `Test email sent to ${toEmail}` });
     } catch (error: any) {
