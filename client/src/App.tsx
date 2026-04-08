@@ -19,6 +19,8 @@ import Branches from "@/pages/branches";
 import Users from "@/pages/users";
 import RolesPermissions from "@/pages/roles-permissions";
 import AuthPage from "@/pages/auth-page";
+import ForgotPassword from "@/pages/forgot-password";
+import ResetPassword from "@/pages/reset-password";
 import Outreach from "@/pages/outreach";
 import AdminSettings from "@/pages/admin-settings";
 import NotFound from "@/pages/not-found";
@@ -99,6 +101,12 @@ function AppShell() {
     <Switch>
       <Route path="/first-timer-form">
         <FirstTimerForm />
+      </Route>
+      <Route path="/forgot-password">
+        <ForgotPassword />
+      </Route>
+      <Route path="/reset-password">
+        <ResetPassword />
       </Route>
       <Route>
         {isLoading || (isAuthenticated && isRoleLoading) ? (

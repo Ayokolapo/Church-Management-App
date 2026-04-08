@@ -130,6 +130,15 @@ function SigninForm() {
             </FormItem>
           )}
         />
+        <div className="flex justify-end">
+          <a
+            href="/forgot-password"
+            className="text-xs hover:underline"
+            style={{ color: "#F7821B" }}
+          >
+            Forgot password?
+          </a>
+        </div>
         <Button
           type="submit"
           className="w-full h-11 font-semibold text-white mt-2"
