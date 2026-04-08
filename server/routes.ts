@@ -139,6 +139,49 @@ const DEFAULT_TEMPLATES: Record<string, { subject: string; htmlContent: string; 
   },
 };
 
+// ---------------------------------------------------------------------------
+// Transactional email helper — resolves provider, renders template, sends
+// ---------------------------------------------------------------------------
+async function sendTransactionalEmail(
+  templateName: string,
+  variables: Record<string, string>,
+  toEmail: string
+): Promise<void> {
+  const settings = await storage.getSmtpSettings();
+  if (!settings || !settings.enabled) return;
+
+  const defaults = DEFAULT_TEMPLATES[templateName];
+  if (!defaults) throw new Error(`Unknown email template: ${templateName}`);
+
+  const custom = await storage.getEmailTemplate(templateName);
+  let subject = custom?.subject ?? defaults.subject;
+  let html = custom?.htmlContent ?? defaults.htmlContent;
+
+  for (const [key, value] of Object.entries(variables)) {
+    subject = subject.split(key).join(value);
+    html = html.split(key).join(value);
+  }
+
+  const decryptedKey = decryptPassword(settings.encryptedPassword);
+  const from = `"${settings.fromName}" <${settings.fromEmail}>`;
+
+  if (settings.provider === "resend") {
+    const resend = new Resend(decryptedKey);
+    const { error } = await resend.emails.send({ from, to: [toEmail], subject, html });
+    if (error) throw new Error(error.message);
+  } else {
+    const secure = settings.security === "ssl";
+    const transporter = nodemailer.createTransport({
+      host: settings.host,
+      port: settings.port,
+      secure,
+      auth: { user: settings.username, pass: decryptedKey },
+      tls: { rejectUnauthorized: false },
+    });
+    await transporter.sendMail({ from, to: toEmail, subject, html });
+  }
+}
+
 const BCRYPT_ROUNDS = 12;
 
 async function hashPassword(password: string): Promise<string> {
@@ -186,6 +229,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
       const { passwordHash: _, ...safeUser } = user;
       res.status(201).json({ message: "Registration successful", user: safeUser });
+
+      // Fire-and-forget — email failure must not break signup
+      sendTransactionalEmail("signup_confirmation", {
+        "{{firstName}}": user.firstName ?? "",
+        "{{lastName}}": user.lastName ?? "",
+        "{{email}}": user.email ?? "",
+      }, user.email ?? "").catch(err => console.error("[email] signup_confirmation failed:", err));
     } catch (error: any) {
       console.error("Error during signup:", error);
       if (error.name === 'ZodError') {
@@ -225,6 +275,95 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("Error during signin:", error);
       res.status(500).json({ error: "Sign in failed" });
+    }
+  });
+
+  // POST /api/forgot-password — generate reset token and email a link (public)
+  app.post("/api/forgot-password", async (req, res) => {
+    try {
+      const { email } = req.body;
+      if (!email) return res.status(400).json({ error: "Email is required" });
+
+      const user = await storage.getUserByEmail((email as string).toLowerCase().trim());
+      // Always return success to prevent email enumeration
+      if (!user) return res.json({ message: "If an account exists with that email, a reset link has been sent." });
+
+      const token = crypto.randomBytes(32).toString("hex");
+      const expiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+      await storage.setPasswordResetToken(user.id, token, expiry);
+
+      const baseUrl = process.env.APP_URL || `${req.protocol}://${req.get("host")}`;
+      const resetLink = `${baseUrl}/reset-password?token=${token}`;
+
+      sendTransactionalEmail("password_reset", {
+        "{{firstName}}": user.firstName ?? "there",
+        "{{resetLink}}": resetLink,
+        "{{expiresIn}}": "1 hour",
+      }, user.email ?? "").catch(err => console.error("[email] password_reset failed:", err));
+
+      res.json({ message: "If an account exists with that email, a reset link has been sent." });
+    } catch (error: any) {
+      console.error("Error in forgot-password:", error);
+      res.status(500).json({ error: "Failed to process request" });
+    }
+  });
+
+  // POST /api/reset-password — consume token and set new password (public)
+  app.post("/api/reset-password", async (req, res) => {
+    try {
+      const { token, password } = req.body;
+      if (!token || !password) return res.status(400).json({ error: "Token and password are required" });
+      if ((password as string).length < 8) return res.status(400).json({ error: "Password must be at least 8 characters" });
+
+      const user = await storage.getUserByResetToken(token as string);
+      if (!user) return res.status(400).json({ error: "Invalid or expired reset token" });
+
+      const passwordHash = await hashPassword(password);
+      await storage.updatePasswordHash(user.id, passwordHash);
+      await storage.clearPasswordResetToken(user.id);
+
+      sendTransactionalEmail("password_changed", {
+        "{{firstName}}": user.firstName ?? "there",
+        "{{email}}": user.email ?? "",
+      }, user.email ?? "").catch(err => console.error("[email] password_changed failed:", err));
+
+      res.json({ message: "Password has been reset successfully." });
+    } catch (error: any) {
+      console.error("Error in reset-password:", error);
+      res.status(500).json({ error: "Failed to reset password" });
+    }
+  });
+
+  // POST /api/me/change-password — authenticated user changes their own password
+  app.post("/api/me/change-password", isAuthenticated, async (req: any, res) => {
+    try {
+      const { currentPassword, newPassword } = req.body;
+      if (!currentPassword || !newPassword) {
+        return res.status(400).json({ error: "Current password and new password are required" });
+      }
+      if ((newPassword as string).length < 8) {
+        return res.status(400).json({ error: "New password must be at least 8 characters" });
+      }
+
+      const userId = req.user.claims.sub;
+      const user = await storage.getUserById(userId);
+      if (!user || !user.passwordHash) return res.status(400).json({ error: "User not found" });
+
+      const valid = await verifyPassword(currentPassword, user.passwordHash);
+      if (!valid) return res.status(400).json({ error: "Current password is incorrect" });
+
+      const passwordHash = await hashPassword(newPassword);
+      await storage.updatePasswordHash(userId, passwordHash);
+
+      sendTransactionalEmail("password_changed", {
+        "{{firstName}}": user.firstName ?? "there",
+        "{{email}}": user.email ?? "",
+      }, user.email ?? "").catch(err => console.error("[email] password_changed failed:", err));
+
+      res.json({ message: "Password changed successfully." });
+    } catch (error: any) {
+      console.error("Error in change-password:", error);
+      res.status(500).json({ error: "Failed to change password" });
     }
   });
 
@@ -1245,6 +1384,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const validatedData = insertUserRoleSchema.parse(req.body);
       const role = await storage.assignUserRole(validatedData);
       res.json(role);
+
+      // Fire-and-forget role assignment email
+      storage.getUserById(validatedData.userId).then(async (user) => {
+        if (!user?.email) return;
+        const branch = validatedData.branchId ? await storage.getBranchById(validatedData.branchId) : null;
+        sendTransactionalEmail("role_assigned", {
+          "{{firstName}}": user.firstName ?? "there",
+          "{{role}}": validatedData.role ?? "",
+          "{{branchName}}": branch?.name ?? "The Waypoint",
+        }, user.email).catch(err => console.error("[email] role_assigned failed:", err));
+      }).catch(err => console.error("[email] role_assigned lookup failed:", err));
     } catch (error: any) {
       console.error("Error assigning user role:", error);
       res.status(400).json({ error: error.message || "Failed to assign user role" });
@@ -1850,6 +2000,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ name, ...defaults, isCustomized: false });
     } catch (error: any) {
       res.status(500).json({ error: error.message || "Failed to reset template" });
+    }
+  });
+
+  // POST /api/admin/send-notification — send a general notification to a user
+  app.post("/api/admin/send-notification", isAuthenticated, requireRole("super_admin", "branch_admin"), async (req, res) => {
+    try {
+      const { userId, email, subject, message } = req.body;
+      if ((!userId && !email) || !subject || !message) {
+        return res.status(400).json({ error: "Recipient (userId or email), subject, and message are required" });
+      }
+
+      let toEmail: string = email ?? "";
+      let firstName = "";
+
+      if (userId) {
+        const user = await storage.getUserById(userId);
+        if (!user) return res.status(404).json({ error: "User not found" });
+        toEmail = user.email ?? toEmail;
+        firstName = user.firstName ?? "";
+      }
+
+      if (!toEmail) return res.status(400).json({ error: "Could not resolve recipient email" });
+
+      await sendTransactionalEmail("general_notification", {
+        "{{firstName}}": firstName || "there",
+        "{{subject}}": subject,
+        "{{message}}": message,
+      }, toEmail);
+
+      res.json({ message: "Notification sent successfully." });
+    } catch (error: any) {
+      console.error("Error sending notification:", error);
+      res.status(500).json({ error: error.message || "Failed to send notification" });
     }
   });
 

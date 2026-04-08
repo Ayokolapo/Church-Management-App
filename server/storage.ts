@@ -51,7 +51,7 @@ import {
   type EmailTemplate,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, sql, desc, inArray, asc } from "drizzle-orm";
+import { eq, and, sql, desc, inArray, asc, gt } from "drizzle-orm";
 
 export interface IStorage {
   // Members
@@ -154,11 +154,16 @@ export interface IStorage {
   updateOutreach(id: string, data: Partial<InsertOutreach>): Promise<Outreach>;
   deleteOutreach(id: string): Promise<void>;
 
-  // User signup
+  // User signup + account management
+  getUserById(id: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
   createSignupUser(data: { firstName: string; lastName: string; gender: string; address: string; phoneNumber: string; email: string; branchId: string; passwordHash: string }): Promise<User>;
   incrementLoginCount(userId: string): Promise<void>;
   completeOnboarding(userId: string): Promise<void>;
+  updatePasswordHash(userId: string, passwordHash: string): Promise<void>;
+  setPasswordResetToken(userId: string, token: string, expiry: Date): Promise<void>;
+  getUserByResetToken(token: string): Promise<User | undefined>;
+  clearPasswordResetToken(userId: string): Promise<void>;
 
   // Role Permissions
   getRolePermissions(): Promise<Record<string, string[]>>;
@@ -1347,6 +1352,35 @@ export class DatabaseStorage implements IStorage {
     await db
       .update(users)
       .set({ onboardingCompleted: true })
+      .where(eq(users.id, userId));
+  }
+
+  async getUserById(id: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user;
+  }
+
+  async updatePasswordHash(userId: string, passwordHash: string): Promise<void> {
+    await db.update(users).set({ passwordHash, updatedAt: new Date() }).where(eq(users.id, userId));
+  }
+
+  async setPasswordResetToken(userId: string, token: string, expiry: Date): Promise<void> {
+    await db.update(users)
+      .set({ passwordResetToken: token, passwordResetExpiry: expiry, updatedAt: new Date() })
+      .where(eq(users.id, userId));
+  }
+
+  async getUserByResetToken(token: string): Promise<User | undefined> {
+    const now = new Date();
+    const [user] = await db.select().from(users).where(
+      and(eq(users.passwordResetToken, token), gt(users.passwordResetExpiry, now))
+    );
+    return user;
+  }
+
+  async clearPasswordResetToken(userId: string): Promise<void> {
+    await db.update(users)
+      .set({ passwordResetToken: null, passwordResetExpiry: null, updatedAt: new Date() })
       .where(eq(users.id, userId));
   }
 

@@ -28,6 +28,8 @@ export const users = pgTable("users", {
   phoneNumber: varchar("phone_number"),
   branchId: varchar("branch_id"),
   passwordHash: varchar("password_hash"),
+  passwordResetToken: varchar("password_reset_token"),
+  passwordResetExpiry: timestamp("password_reset_expiry"),
   loginCount: integer("login_count").default(0).notNull(),
   onboardingCompleted: boolean("onboarding_completed").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
