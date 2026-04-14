@@ -1,4 +1,4 @@
-import { Users, UserPlus, CalendarCheck, Home, MessageSquare, ClipboardList, Network, Building2, UserCog, ShieldCheck, LogOut, Megaphone, Settings } from "lucide-react";
+import { Users, UserPlus, CalendarCheck, Home, MessageSquare, ClipboardList, Network, Building2, UserCog, ShieldCheck, LogOut, Megaphone, Settings, BarChart2 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import {
   Sidebar,
@@ -22,6 +22,12 @@ const mainMenuItems = [
     url: "/",
     icon: Home,
     onboardingId: "nav-dashboard",
+  },
+  {
+    title: "Reports",
+    url: "/reports",
+    icon: BarChart2,
+    onboardingId: "nav-reports",
   },
   {
     title: "Members",

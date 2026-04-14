@@ -434,6 +434,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/analytics/executive-summary", isAuthenticated, async (req, res) => {
+    try {
+      const data = await storage.getExecutiveSummary();
+      res.json(data);
+    } catch (error) {
+      console.error("Error fetching executive summary:", error);
+      res.status(500).json({ error: "Failed to fetch executive summary" });
+    }
+  });
+
+  app.get("/api/analytics/first-timer-analysis", isAuthenticated, async (req, res) => {
+    try {
+      const data = await storage.getFirstTimerAnalysis();
+      res.json(data);
+    } catch (error) {
+      console.error("Error fetching first timer analysis:", error);
+      res.status(500).json({ error: "Failed to fetch first timer analysis" });
+    }
+  });
+
+  app.get("/api/analytics/cell-attendance-analysis", isAuthenticated, async (req, res) => {
+    try {
+      const data = await storage.getCellAttendanceAnalysis();
+      res.json(data);
+    } catch (error) {
+      console.error("Error fetching cell attendance analysis:", error);
+      res.status(500).json({ error: "Failed to fetch cell attendance analysis" });
+    }
+  });
+
   // Communications endpoints
   app.post("/api/communications/send", isAuthenticated, requirePermission("communications.send"), async (req, res) => {
     try {

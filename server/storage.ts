@@ -176,6 +176,39 @@ export interface IStorage {
   // Email Templates
   getEmailTemplate(name: string): Promise<EmailTemplate | undefined>;
   upsertEmailTemplate(name: string, data: { subject: string; htmlContent: string }): Promise<EmailTemplate>;
+
+  // Reports
+  getExecutiveSummary(): Promise<{
+    membersByStatus: { status: string; count: number }[];
+    memberGrowth: { month: string; count: number }[];
+    attendanceTrend: { date: string; present: number; total: number }[];
+    firstTimerStats: { total: number; converted: number; pending: number };
+    followUpStats: { total: number; completed: number; pending: number };
+    occupationDistribution: { occupation: string; count: number }[];
+    genderDistribution: { gender: string; count: number }[];
+    clusterAttendance: { clusterName: string; totalAttendance: number }[];
+  }>;
+  getFirstTimerAnalysis(): Promise<{
+    conversionStats: {
+      convertedThisQuarter: number;
+      totalThisQuarter: number;
+      stillAttending: number;
+      stillAttendingPct: number;
+      avgServicesAttended: number;
+      droppedOff: number;
+      droppedOffPct: number;
+    };
+    attendanceFrequency: { bucket: string; label: string; count: number }[];
+    retentionBySeeingAgain: { intent: string; retained: number; droppedOff: number }[];
+    howHeardAbout: { source: string; count: number }[];
+    enjoyedAboutService: { aspect: string; count: number }[];
+  }>;
+  getCellAttendanceAnalysis(): Promise<{
+    attendanceTrend: { date: string; count: number }[];
+    topCells: { cellName: string; clusterName: string; totalAttendance: number; avgPerMeeting: number }[];
+    clusterComparison: { clusterName: string; totalAttendance: number; cellCount: number; avgPerMeeting: number }[];
+    recentMeetings: { cellName: string; clusterName: string; meetingDate: string; attendees: number }[];
+  }>;
 }
 
 const ALL_PERMISSIONS = [
@@ -1446,6 +1479,292 @@ export class DatabaseStorage implements IStorage {
       const [created] = await db.insert(emailTemplates).values({ name, ...data }).returning();
       return created;
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // Reports
+  // -------------------------------------------------------------------------
+
+  async getExecutiveSummary() {
+    // Members by status
+    const membersByStatus = await db
+      .select({ status: members.status, count: sql<number>`COUNT(*)::int` })
+      .from(members)
+      .groupBy(members.status);
+
+    // Member growth — new members per month for the last 6 months
+    const memberGrowth = await (db as any).execute(sql`
+      SELECT TO_CHAR(DATE_TRUNC('month', join_date::date), 'Mon YY') AS month,
+             COUNT(*)::int AS count
+      FROM members
+      WHERE join_date::date >= DATE_TRUNC('month', NOW()) - INTERVAL '5 months'
+      GROUP BY DATE_TRUNC('month', join_date::date)
+      ORDER BY DATE_TRUNC('month', join_date::date)
+    `);
+
+    // Sunday attendance trend — last 8 service dates that have records
+    const attendanceTrend = await db
+      .select({
+        date: attendance.serviceDate,
+        present: sql<number>`COUNT(CASE WHEN ${attendance.status} = 'Present' THEN 1 END)::int`,
+        total: sql<number>`COUNT(*)::int`,
+      })
+      .from(attendance)
+      .groupBy(attendance.serviceDate)
+      .orderBy(desc(attendance.serviceDate))
+      .limit(8);
+
+    // First timer stats
+    const [ftTotal] = await db.select({ count: sql<number>`COUNT(*)::int` }).from(firstTimers);
+    const [ftConverted] = await db
+      .select({ count: sql<number>`COUNT(*)::int` })
+      .from(firstTimers)
+      .where(sql`${firstTimers.convertedToMember} IS NOT NULL`);
+
+    // Follow-up task stats
+    const [fuTotal] = await db.select({ count: sql<number>`COUNT(*)::int` }).from(followUpTasks);
+    const [fuCompleted] = await db
+      .select({ count: sql<number>`COUNT(*)::int` })
+      .from(followUpTasks)
+      .where(eq(followUpTasks.status, 'Completed'));
+
+    // Occupation distribution
+    const occupationDistribution = await db
+      .select({ occupation: members.occupation, count: sql<number>`COUNT(*)::int` })
+      .from(members)
+      .groupBy(members.occupation);
+
+    // Gender distribution
+    const genderDistribution = await db
+      .select({ gender: members.gender, count: sql<number>`COUNT(*)::int` })
+      .from(members)
+      .groupBy(members.gender);
+
+    // Cell attendance by cluster (last 90 days)
+    const clusterAttendance = await (db as any).execute(sql`
+      SELECT cl.name AS "clusterName", COUNT(ca.id)::int AS "totalAttendance"
+      FROM cell_attendance ca
+      JOIN cells c ON c.id = ca.cell_id
+      JOIN clusters cl ON cl.id = c.cluster_id
+      WHERE ca.meeting_date >= NOW() - INTERVAL '90 days'
+      GROUP BY cl.name
+      ORDER BY "totalAttendance" DESC
+    `);
+
+    const ftPending = ftTotal.count - ftConverted.count;
+    const fuPending = fuTotal.count - fuCompleted.count;
+
+    return {
+      membersByStatus,
+      memberGrowth: (memberGrowth.rows as any[]).map(r => ({ month: r.month, count: Number(r.count) })),
+      attendanceTrend: attendanceTrend.reverse(),
+      firstTimerStats: { total: ftTotal.count, converted: ftConverted.count, pending: ftPending },
+      followUpStats: { total: fuTotal.count, completed: fuCompleted.count, pending: fuPending },
+      occupationDistribution,
+      genderDistribution,
+      clusterAttendance: (clusterAttendance.rows as any[]).map(r => ({ clusterName: r.clusterName, totalAttendance: Number(r.totalAttendance) })),
+    };
+  }
+
+  async getFirstTimerAnalysis() {
+    const now = new Date();
+    const quarterStart = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1);
+    const quarterStartStr = quarterStart.toISOString().split('T')[0];
+
+    // Conversion stats this quarter
+    const [totalThisQtr] = await db
+      .select({ count: sql<number>`COUNT(*)::int` })
+      .from(firstTimers)
+      .where(sql`${firstTimers.createdAt} >= ${quarterStartStr}::date`);
+
+    const [convertedThisQtr] = await db
+      .select({ count: sql<number>`COUNT(*)::int` })
+      .from(firstTimers)
+      .where(
+        and(
+          sql`${firstTimers.createdAt} >= ${quarterStartStr}::date`,
+          sql`${firstTimers.convertedToMember} IS NOT NULL`
+        )
+      );
+
+    // Among converted members: how many have 4+ services post-conversion (still attending)
+    const convertedMembers = await db
+      .select({ memberId: firstTimers.memberId, convertedAt: firstTimers.convertedToMember })
+      .from(firstTimers)
+      .where(sql`${firstTimers.memberId} IS NOT NULL AND ${firstTimers.convertedToMember} IS NOT NULL`);
+
+    let stillAttendingCount = 0;
+    let totalServicesAttended = 0;
+    const attendanceFreqMap: Record<string, number> = { '0-1': 0, '2-3': 0, '4-6': 0, '7-9': 0, '10-12': 0 };
+
+    if (convertedMembers.length > 0) {
+      const memberIds = convertedMembers.map(m => m.memberId).filter(Boolean) as string[];
+
+      const svcCounts = await db
+        .select({
+          memberId: attendance.memberId,
+          count: sql<number>`COUNT(*)::int`,
+        })
+        .from(attendance)
+        .where(and(inArray(attendance.memberId, memberIds), eq(attendance.status, 'Present')))
+        .groupBy(attendance.memberId);
+
+      const svcMap = new Map(svcCounts.map(s => [s.memberId, s.count]));
+
+      for (const cm of convertedMembers) {
+        if (!cm.memberId) continue;
+        const cnt = svcMap.get(cm.memberId) ?? 0;
+        totalServicesAttended += cnt;
+        if (cnt >= 4) stillAttendingCount++;
+        if (cnt <= 1) attendanceFreqMap['0-1']++;
+        else if (cnt <= 3) attendanceFreqMap['2-3']++;
+        else if (cnt <= 6) attendanceFreqMap['4-6']++;
+        else if (cnt <= 9) attendanceFreqMap['7-9']++;
+        else attendanceFreqMap['10-12']++;
+      }
+    }
+
+    const totalConverted = convertedMembers.length;
+    const avgServicesAttended = totalConverted > 0 ? Math.round((totalServicesAttended / totalConverted) * 10) / 10 : 0;
+    const droppedOff = totalConverted > 0 ? totalConverted - stillAttendingCount : 0;
+    const droppedOffPct = totalConverted > 0 ? Math.round((droppedOff / totalConverted) * 100) : 0;
+    const stillAttendingPct = totalConverted > 0 ? Math.round((stillAttendingCount / totalConverted) * 100) : 0;
+
+    const attendanceFrequency = [
+      { bucket: '0-1', label: '0–1 visits\n(dropped off)', count: attendanceFreqMap['0-1'] },
+      { bucket: '2-3', label: '2–3 visits\n(irregular)', count: attendanceFreqMap['2-3'] },
+      { bucket: '4-6', label: '4–6 visits\n(occasional)', count: attendanceFreqMap['4-6'] },
+      { bucket: '7-9', label: '7–9 visits\n(regular)', count: attendanceFreqMap['7-9'] },
+      { bucket: '10-12', label: '10–12 visits\n(committed)', count: attendanceFreqMap['10-12'] },
+    ];
+
+    // Retention by seeing-again intent
+    const allFTs = await db
+      .select({ seeingAgain: firstTimers.seeingAgain, memberId: firstTimers.memberId })
+      .from(firstTimers);
+
+    const intentMap: Record<string, { retained: number; droppedOff: number }> = {
+      'Yes': { retained: 0, droppedOff: 0 },
+      'Maybe': { retained: 0, droppedOff: 0 },
+      'No': { retained: 0, droppedOff: 0 },
+    };
+    for (const ft of allFTs) {
+      const key = ft.seeingAgain in intentMap ? ft.seeingAgain : 'No';
+      if (ft.memberId) intentMap[key].retained++;
+      else intentMap[key].droppedOff++;
+    }
+    const retentionBySeeingAgain = Object.entries(intentMap).map(([intent, v]) => ({ intent, ...v }));
+
+    // How heard about
+    const howHeardRows = await db
+      .select({ source: firstTimers.howHeardAbout, count: sql<number>`COUNT(*)::int` })
+      .from(firstTimers)
+      .groupBy(firstTimers.howHeardAbout);
+    const howHeardAbout = howHeardRows.map(r => ({ source: r.source, count: r.count }));
+
+    // Enjoyed about service — unnest array column
+    const enjoyedRows = await (db as any).execute(sql`
+      SELECT unnest(enjoyed_about_service) AS aspect, COUNT(*)::int AS count
+      FROM first_timers
+      GROUP BY aspect
+      ORDER BY count DESC
+    `);
+    const enjoyedAboutService = (enjoyedRows.rows as any[]).map(r => ({ aspect: r.aspect, count: Number(r.count) }));
+
+    return {
+      conversionStats: {
+        convertedThisQuarter: convertedThisQtr.count,
+        totalThisQuarter: totalThisQtr.count,
+        stillAttending: stillAttendingCount,
+        stillAttendingPct,
+        avgServicesAttended,
+        droppedOff,
+        droppedOffPct,
+      },
+      attendanceFrequency,
+      retentionBySeeingAgain,
+      howHeardAbout,
+      enjoyedAboutService,
+    };
+  }
+
+  async getCellAttendanceAnalysis() {
+    // Attendance trend — daily counts for last 90 days
+    const trendRows = await db
+      .select({
+        date: cellAttendance.meetingDate,
+        count: sql<number>`COUNT(*)::int`,
+      })
+      .from(cellAttendance)
+      .where(sql`${cellAttendance.meetingDate} >= NOW() - INTERVAL '90 days'`)
+      .groupBy(cellAttendance.meetingDate)
+      .orderBy(cellAttendance.meetingDate);
+
+    // Top cells by total attendance (all time)
+    const topCellRows = await (db as any).execute(sql`
+      SELECT
+        c.name AS "cellName",
+        COALESCE(cl.name, 'Unknown') AS "clusterName",
+        COUNT(ca.id)::int AS "totalAttendance",
+        ROUND(COUNT(ca.id)::numeric / NULLIF(COUNT(DISTINCT ca.meeting_date), 0), 1)::float AS "avgPerMeeting"
+      FROM cells c
+      LEFT JOIN cell_attendance ca ON ca.cell_id = c.id
+      LEFT JOIN clusters cl ON cl.id = c.cluster_id
+      GROUP BY c.id, c.name, cl.name
+      ORDER BY "totalAttendance" DESC
+      LIMIT 10
+    `);
+
+    // Cluster comparison
+    const clusterRows = await (db as any).execute(sql`
+      SELECT
+        COALESCE(cl.name, 'Unknown') AS "clusterName",
+        COUNT(ca.id)::int AS "totalAttendance",
+        COUNT(DISTINCT c.id)::int AS "cellCount",
+        ROUND(COUNT(ca.id)::numeric / NULLIF(COUNT(DISTINCT ca.meeting_date || ca.cell_id), 0), 1)::float AS "avgPerMeeting"
+      FROM clusters cl
+      LEFT JOIN cells c ON c.cluster_id = cl.id
+      LEFT JOIN cell_attendance ca ON ca.cell_id = c.id
+      GROUP BY cl.id, cl.name
+      ORDER BY "totalAttendance" DESC
+    `);
+
+    // Recent meetings — last 20 cell meetings
+    const recentRows = await (db as any).execute(sql`
+      SELECT
+        c.name AS "cellName",
+        COALESCE(cl.name, 'Unknown') AS "clusterName",
+        ca.meeting_date::text AS "meetingDate",
+        COUNT(ca.id)::int AS attendees
+      FROM cell_attendance ca
+      JOIN cells c ON c.id = ca.cell_id
+      LEFT JOIN clusters cl ON cl.id = c.cluster_id
+      GROUP BY c.name, cl.name, ca.meeting_date
+      ORDER BY ca.meeting_date DESC
+      LIMIT 20
+    `);
+
+    return {
+      attendanceTrend: trendRows.map(r => ({ date: r.date as string, count: r.count })),
+      topCells: (topCellRows.rows as any[]).map(r => ({
+        cellName: r.cellName,
+        clusterName: r.clusterName,
+        totalAttendance: Number(r.totalAttendance),
+        avgPerMeeting: Number(r.avgPerMeeting),
+      })),
+      clusterComparison: (clusterRows.rows as any[]).map(r => ({
+        clusterName: r.clusterName,
+        totalAttendance: Number(r.totalAttendance),
+        cellCount: Number(r.cellCount),
+        avgPerMeeting: Number(r.avgPerMeeting),
+      })),
+      recentMeetings: (recentRows.rows as any[]).map(r => ({
+        cellName: r.cellName,
+        clusterName: r.clusterName,
+        meetingDate: r.meetingDate,
+        attendees: Number(r.attendees),
+      })),
+    };
   }
 }
 

@@ -23,6 +23,7 @@ import ForgotPassword from "@/pages/forgot-password";
 import ResetPassword from "@/pages/reset-password";
 import Outreach from "@/pages/outreach";
 import AdminSettings from "@/pages/admin-settings";
+import Reports from "@/pages/reports";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -41,6 +42,7 @@ function Router() {
       <Route path="/roles-permissions" component={RolesPermissions} />
       <Route path="/outreach" component={Outreach} />
       <Route path="/admin-settings" component={AdminSettings} />
+      <Route path="/reports" component={Reports} />
       <Route component={NotFound} />
     </Switch>
   );
