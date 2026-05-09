@@ -65,6 +65,7 @@ export default function Cells() {
       return res.json();
     },
     enabled: !!selectedCell && showAttendanceDialog,
+    staleTime: 0,
   });
 
   const { data: meetingDates } = useQuery<string[]>({
@@ -172,6 +173,7 @@ export default function Cells() {
   const handleOpenAttendance = (cell: CellWithMembers) => {
     setSelectedCell(cell);
     setSelectedMembers(new Set());
+    setAttendanceDate(format(new Date(), "yyyy-MM-dd"));
     setAttendanceMemberSearch("");
     setShowCellMembersOnly(false);
     setShowAttendanceDialog(true);
@@ -270,7 +272,11 @@ export default function Cells() {
     });
   };
 
-  const presentCount = cellAttendance?.length ?? 0;
+  const presentMemberIds = new Set([
+    ...(cellAttendance?.map((a) => a.memberId) ?? []),
+    ...Array.from(selectedMembers),
+  ]);
+  const presentCount = presentMemberIds.size;
 
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
