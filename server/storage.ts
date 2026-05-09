@@ -51,7 +51,7 @@ import {
   type EmailTemplate,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, sql, desc, inArray, asc, gt } from "drizzle-orm";
+import { eq, and, sql, desc, inArray, asc, gt, gte, lte, ilike, or } from "drizzle-orm";
 
 export interface IStorage {
   // Members
@@ -68,7 +68,7 @@ export interface IStorage {
   mergeMembers(primaryId: string, duplicateIds: string[]): Promise<Member>;
 
   // First Timers
-  getFirstTimers(params?: { page?: number; limit?: number }): Promise<PaginatedResult<FirstTimer>>;
+  getFirstTimers(params?: { page?: number; limit?: number; search?: string; seeingAgain?: string; dateFrom?: string; dateTo?: string }): Promise<PaginatedResult<FirstTimer>>;
   getFirstTimerById(id: string): Promise<FirstTimer | undefined>;
   createFirstTimer(firstTimer: InsertFirstTimer): Promise<FirstTimer>;
   convertFirstTimerToMember(id: string): Promise<Member>;
@@ -558,16 +558,42 @@ export class DatabaseStorage implements IStorage {
     return await this.updateMember(primaryId, updates);
   }
 
-  async getFirstTimers(params?: { page?: number; limit?: number }): Promise<PaginatedResult<FirstTimer>> {
+  async getFirstTimers(params?: { page?: number; limit?: number; search?: string; seeingAgain?: string; dateFrom?: string; dateTo?: string }): Promise<PaginatedResult<FirstTimer>> {
     const page = params?.page ?? 1;
     const limit = params?.limit ?? 50;
     const offset = (page - 1) * limit;
 
+    const conditions = [];
+    if (params?.search) {
+      const term = `%${params.search}%`;
+      conditions.push(
+        or(
+          ilike(firstTimers.firstName, term),
+          ilike(firstTimers.lastName, term),
+          ilike(firstTimers.mobilePhone, term)
+        )
+      );
+    }
+    if (params?.seeingAgain) {
+      conditions.push(eq(firstTimers.seeingAgain, params.seeingAgain));
+    }
+    if (params?.dateFrom) {
+      conditions.push(gte(firstTimers.createdAt, new Date(params.dateFrom)));
+    }
+    if (params?.dateTo) {
+      const to = new Date(params.dateTo);
+      to.setHours(23, 59, 59, 999);
+      conditions.push(lte(firstTimers.createdAt, to));
+    }
+    const where = conditions.length > 0 ? and(...conditions) : undefined;
+
     const [{ total }] = await db
       .select({ total: sql<number>`COUNT(*)::int` })
-      .from(firstTimers);
+      .from(firstTimers)
+      .where(where);
 
     const data = await db.select().from(firstTimers)
+      .where(where)
       .orderBy(desc(firstTimers.createdAt))
       .limit(limit)
       .offset(offset);

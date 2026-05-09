@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { insertFirstTimerSchema, type InsertFirstTimer, type Branch, type Cluster } from "@shared/schema";
+import { useParams } from "wouter";
+import { insertFirstTimerSchema, type InsertFirstTimer, type Branch, type ClusterWithCells } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -23,14 +24,23 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { apiRequest } from "@/lib/queryClient";
 import { CheckCircle } from "lucide-react";
 
 export default function FirstTimerForm() {
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const params = useParams<{ branchSlug?: string }>();
+  const urlBranchSlug = params.branchSlug;
+
+  const toBranchSlug = (name: string) =>
+    name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
 
   const { data: branches } = useQuery<Branch[]>({
-    queryKey: ["/api/branches"],
+    queryKey: ["/api/public/branches"],
+    queryFn: async () => {
+      const res = await fetch("/api/public/branches");
+      return res.json();
+    },
+    staleTime: 0,
   });
 
   const form = useForm<InsertFirstTimer>({
@@ -54,33 +64,46 @@ export default function FirstTimerForm() {
     },
   });
 
-  const selectedBranchId = form.watch("branchId");
+  // Once branches load, set branchId from URL slug
+  useEffect(() => {
+    if (urlBranchSlug && branches) {
+      const matched = branches.find((b) => toBranchSlug(b.name) === urlBranchSlug);
+      if (matched) form.setValue("branchId", matched.id);
+    }
+  }, [branches, urlBranchSlug]);
 
-  const { data: clusters } = useQuery<Cluster[]>({
-    queryKey: ["/api/clusters", selectedBranchId],
+  const selectedBranchId = form.watch("branchId");
+  const urlBranchId = urlBranchSlug
+    ? branches?.find((b) => toBranchSlug(b.name) === urlBranchSlug)?.id ?? ""
+    : "";
+
+  const { data: clusters } = useQuery<ClusterWithCells[]>({
+    queryKey: ["/api/public/clusters", selectedBranchId],
     queryFn: async () => {
-      const res = await apiRequest("GET", `/api/clusters?branchId=${selectedBranchId}`);
+      const res = await fetch(`/api/public/clusters?branchId=${selectedBranchId}`);
       return res.json();
     },
     enabled: !!selectedBranchId,
+    staleTime: 0,
   });
 
   const submitMutation = useMutation({
     mutationFn: async (data: InsertFirstTimer) => {
-      const response = await apiRequest("POST", "/api/first-timers", data);
-      return await response.json();
+      const response = await fetch("/api/public/first-timers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) throw new Error("Submission failed");
+      return response.json();
     },
     onSuccess: () => {
       setIsSubmitted(true);
       form.reset();
     },
-    onError: (error: any) => {
-      console.error("First timer submission error:", error);
-    },
   });
 
   const onSubmit = (data: InsertFirstTimer) => {
-    console.log("Submitting first timer:", data);
     submitMutation.mutate(data);
   };
 
@@ -91,14 +114,16 @@ export default function FirstTimerForm() {
     { id: "Ambience", label: "Ambience" },
   ];
 
+  const selectedBranch = branches?.find((b) => b.id === selectedBranchId);
+
   if (isSubmitted) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4">
-        <Card className="max-w-md w-full">
+      <div className="min-h-screen bg-orange-50 flex items-center justify-center p-4">
+        <Card className="max-w-md w-full border-orange-200">
           <CardContent className="pt-6 text-center space-y-4">
             <div className="flex justify-center">
-              <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center">
-                <CheckCircle className="w-8 h-8 text-primary" />
+              <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center">
+                <CheckCircle className="w-8 h-8 text-orange-500" />
               </div>
             </div>
             <div>
@@ -107,7 +132,11 @@ export default function FirstTimerForm() {
                 Your information has been submitted successfully. We look forward to seeing you again!
               </p>
             </div>
-            <Button onClick={() => setIsSubmitted(false)} data-testid="button-submit-another">
+            <Button
+              onClick={() => setIsSubmitted(false)}
+              className="bg-orange-500 hover:bg-orange-600 text-white"
+              data-testid="button-submit-another"
+            >
               Submit Another Response
             </Button>
           </CardContent>
@@ -117,21 +146,31 @@ export default function FirstTimerForm() {
   }
 
   return (
-    <div className="min-h-screen bg-background p-4 py-8">
+    <div className="min-h-screen bg-orange-50 p-4 py-8">
       <div className="max-w-2xl mx-auto space-y-6">
-        <div className="text-center space-y-2">
-          <h1 className="text-3xl font-bold" data-testid="text-form-title">Welcome to The Waypoint!</h1>
-          <p className="text-muted-foreground">
-            We're excited to have you. Please fill out this form so we can stay connected.
-          </p>
+        <div className="text-center space-y-4">
+          <img
+            src="/favicon.png"
+            alt="The Waypoint"
+            className="h-16 mx-auto object-contain"
+          />
+          <div className="space-y-1">
+            <h1 className="text-3xl font-bold text-orange-600" data-testid="text-form-title">
+              Welcome to The Waypoint!
+              {selectedBranch && ` — ${selectedBranch.name}`}
+            </h1>
+            <p className="text-muted-foreground">
+              We're excited to have you. Please fill out this form so we can stay connected.
+            </p>
+          </div>
         </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>First Timer Information</CardTitle>
+        <Card className="border-orange-200 shadow-sm">
+          <CardHeader className="border-b border-orange-100">
+            <CardTitle className="text-orange-700">First Timer Information</CardTitle>
             <CardDescription>All fields marked with * are required</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="pt-6">
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -171,26 +210,37 @@ export default function FirstTimerForm() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Branch *</FormLabel>
-                        <Select
-                          onValueChange={(value) => {
-                            field.onChange(value);
-                            form.setValue("closestAxis", "");
-                          }}
-                          value={field.value}
-                        >
-                          <FormControl>
-                            <SelectTrigger data-testid="select-branch">
-                              <SelectValue placeholder="Select a branch" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {branches?.map((branch) => (
-                              <SelectItem key={branch.id} value={branch.id}>
-                                {branch.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        {urlBranchId ? (
+                          <>
+                            <Input
+                              value={selectedBranch?.name ?? "Loading..."}
+                              disabled
+                              className="bg-orange-50"
+                            />
+                            <input type="hidden" {...field} />
+                          </>
+                        ) : (
+                          <Select
+                            onValueChange={(value) => {
+                              field.onChange(value);
+                              form.setValue("closestAxis", "");
+                            }}
+                            value={field.value}
+                          >
+                            <FormControl>
+                              <SelectTrigger data-testid="select-branch">
+                                <SelectValue placeholder="Select a branch" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {branches?.map((branch) => (
+                                <SelectItem key={branch.id} value={branch.id}>
+                                  {branch.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
                         <FormMessage />
                       </FormItem>
                     )}
@@ -385,6 +435,7 @@ export default function FirstTimerForm() {
                                         : current.filter((val) => val !== option.id);
                                       field.onChange(updated);
                                     }}
+                                    className="data-[state=checked]:bg-orange-500 data-[state=checked]:border-orange-500"
                                     data-testid={`checkbox-${option.id.toLowerCase().replace(/\s+/g, '-')}`}
                                   />
                                 </FormControl>
@@ -454,7 +505,7 @@ export default function FirstTimerForm() {
 
                 <Button
                   type="submit"
-                  className="w-full"
+                  className="w-full bg-orange-500 hover:bg-orange-600 text-white"
                   disabled={submitMutation.isPending}
                   data-testid="button-submit"
                 >

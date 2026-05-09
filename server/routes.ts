@@ -391,6 +391,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Public endpoint to get clusters for first-timer form
+  app.get("/api/public/clusters", async (req, res) => {
+    try {
+      const branchId = req.query.branchId as string | undefined;
+      const clusterList = await storage.getClusters(branchId);
+      res.json(clusterList);
+    } catch (error) {
+      console.error("Error fetching clusters:", error);
+      res.status(500).json({ error: "Failed to fetch clusters" });
+    }
+  });
+
+  // Public endpoint to submit first-timer form
+  app.post("/api/public/first-timers", async (req, res) => {
+    try {
+      const validatedData = insertFirstTimerSchema.parse(req.body);
+      const firstTimer = await storage.createFirstTimer(validatedData);
+      res.status(201).json(firstTimer);
+    } catch (error) {
+      console.error("Error creating first timer:", error);
+      res.status(500).json({ error: "Failed to submit form" });
+    }
+  });
+
   // Stats endpoint
   app.get("/api/stats", isAuthenticated, async (req, res) => {
     try {
@@ -820,7 +844,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const page = req.query.page ? parseInt(req.query.page as string, 10) : 1;
       const limit = req.query.limit ? Math.min(parseInt(req.query.limit as string, 10), 200) : 50;
-      const result = await storage.getFirstTimers({ page, limit });
+      const search = req.query.search as string | undefined;
+      const seeingAgain = req.query.seeingAgain as string | undefined;
+      const dateFrom = req.query.dateFrom as string | undefined;
+      const dateTo = req.query.dateTo as string | undefined;
+      const result = await storage.getFirstTimers({ page, limit, search, seeingAgain, dateFrom, dateTo });
       res.json(result);
     } catch (error) {
       console.error("Error fetching first timers:", error);

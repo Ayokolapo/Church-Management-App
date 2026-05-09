@@ -101,6 +101,9 @@ function AppShell() {
   // Public routes always rendered regardless of auth state
   return (
     <Switch>
+      <Route path="/first-timer-form/:branchSlug">
+        <FirstTimerForm />
+      </Route>
       <Route path="/first-timer-form">
         <FirstTimerForm />
       </Route>
