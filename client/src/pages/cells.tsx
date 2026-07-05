@@ -39,6 +39,7 @@ export default function Cells() {
   const [selectedMembers, setSelectedMembers] = useState<Set<string>>(new Set());
   const [attendanceMemberSearch, setAttendanceMemberSearch] = useState("");
   const [showCellMembersOnly, setShowCellMembersOnly] = useState(false);
+  const [showPresentOnly, setShowPresentOnly] = useState(false);
 
   const { data: cells, isLoading: cellsLoading } = useQuery<CellWithMembers[]>({
     queryKey: ["/api/cells"],
@@ -176,6 +177,7 @@ export default function Cells() {
     setAttendanceDate(format(new Date(), "yyyy-MM-dd"));
     setAttendanceMemberSearch("");
     setShowCellMembersOnly(false);
+    setShowPresentOnly(false);
     setShowAttendanceDialog(true);
   };
 
@@ -253,6 +255,10 @@ export default function Cells() {
 
   const filteredAttendanceMembers = (allMembers ?? []).filter(m => {
     if (showCellMembersOnly && m.cell !== selectedCell?.name) return false;
+    if (showPresentOnly) {
+      const isPresent = cellAttendance?.some(a => a.memberId === m.id) || selectedMembers.has(m.id);
+      if (!isPresent) return false;
+    }
     if (!attendanceMemberSearch) return true;
     const s = attendanceMemberSearch.toLowerCase();
     return `${m.firstName} ${m.lastName}`.toLowerCase().includes(s) ||
@@ -607,6 +613,16 @@ export default function Cells() {
               >
                 <Users className="w-4 h-4 mr-1" />
                 Cell only
+              </Button>
+              <Button
+                variant={showPresentOnly ? "default" : "outline"}
+                size="sm"
+                onClick={() => setShowPresentOnly(v => !v)}
+                className="shrink-0"
+                data-testid="button-present-only"
+              >
+                <Check className="w-4 h-4 mr-1" />
+                Present
               </Button>
             </div>
 

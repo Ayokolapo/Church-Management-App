@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 export default function Attendance() {
   const [serviceDate, setServiceDate] = useState(new Date().toISOString().split('T')[0]);
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [attendanceFilter, setAttendanceFilter] = useState<"all" | "present" | "absent">("all");
   const [searchTerm, setSearchTerm] = useState("");
   const { toast } = useToast();
 
@@ -41,6 +42,7 @@ export default function Attendance() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/attendance", serviceDate] });
+      queryClient.invalidateQueries({ queryKey: ["/api/members"] });
     },
     onError: () => {
       toast({
@@ -60,6 +62,7 @@ export default function Attendance() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/attendance", serviceDate] });
+      queryClient.invalidateQueries({ queryKey: ["/api/members"] });
       toast({
         title: "Success",
         description: "All members marked as present",
@@ -92,7 +95,12 @@ export default function Attendance() {
       member.firstName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       member.lastName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       member.mobilePhone.includes(searchTerm);
-    return matchesStatus && matchesSearch;
+    const memberAttendance = attendanceData?.[member.id];
+    const matchesAttendance =
+      attendanceFilter === "all" ||
+      (attendanceFilter === "present" && memberAttendance === "Present") ||
+      (attendanceFilter === "absent" && memberAttendance !== "Present");
+    return matchesStatus && matchesSearch && matchesAttendance;
   }) || [];
 
   const statusCounts = {
@@ -158,6 +166,20 @@ export default function Attendance() {
               className="pl-10"
               data-testid="input-search"
             />
+          </div>
+          <div className="flex gap-2 shrink-0">
+            {(["all", "present", "absent"] as const).map((f) => (
+              <Button
+                key={f}
+                variant={attendanceFilter === f ? "default" : "outline"}
+                size="sm"
+                onClick={() => setAttendanceFilter(f)}
+                className="capitalize"
+                data-testid={`filter-attendance-${f}`}
+              >
+                {f === "all" ? "All" : f === "present" ? "Present" : "Absent"}
+              </Button>
+            ))}
           </div>
           {statusFilter !== "all" && (
             <Button
