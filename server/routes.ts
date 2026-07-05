@@ -871,6 +871,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.patch("/api/first-timers/:id", isAuthenticated, requirePermission("first_timers.create"), async (req, res) => {
+    try {
+      const updated = await storage.updateFirstTimer(req.params.id, req.body);
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Error updating first timer:", error);
+      res.status(400).json({ error: error.message || "Failed to update first timer" });
+    }
+  });
+
   app.post("/api/first-timers/:id/convert", isAuthenticated, requirePermission("first_timers.convert"), async (req, res) => {
     try {
       const member = await storage.convertFirstTimerToMember(req.params.id);

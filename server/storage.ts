@@ -71,6 +71,7 @@ export interface IStorage {
   getFirstTimers(params?: { page?: number; limit?: number; search?: string; seeingAgain?: string; dateFrom?: string; dateTo?: string }): Promise<PaginatedResult<FirstTimer>>;
   getFirstTimerById(id: string): Promise<FirstTimer | undefined>;
   createFirstTimer(firstTimer: InsertFirstTimer): Promise<FirstTimer>;
+  updateFirstTimer(id: string, data: Partial<InsertFirstTimer>): Promise<FirstTimer>;
   convertFirstTimerToMember(id: string): Promise<Member>;
 
   // Attendance
@@ -609,6 +610,16 @@ export class DatabaseStorage implements IStorage {
   async createFirstTimer(insertFirstTimer: InsertFirstTimer): Promise<FirstTimer> {
     const [firstTimer] = await db.insert(firstTimers).values(insertFirstTimer).returning();
     return firstTimer;
+  }
+
+  async updateFirstTimer(id: string, data: Partial<InsertFirstTimer>): Promise<FirstTimer> {
+    const [updated] = await db
+      .update(firstTimers)
+      .set(data)
+      .where(eq(firstTimers.id, id))
+      .returning();
+    if (!updated) throw new Error("First timer not found");
+    return updated;
   }
 
   async convertFirstTimerToMember(id: string): Promise<Member> {

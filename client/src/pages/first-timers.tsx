@@ -1,11 +1,17 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Download, Upload, ExternalLink, ChevronLeft, ChevronRight, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { FirstTimerTable } from "@/components/first-timer-table";
 import { ImportDialog } from "@/components/import-dialog";
-import type { FirstTimer, PaginatedResult, Branch } from "@shared/schema";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { insertFirstTimerSchema, type FirstTimer, type InsertFirstTimer, type PaginatedResult, type Branch } from "@shared/schema";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -21,14 +27,33 @@ import { Label } from "@/components/ui/label";
 
 const PAGE_LIMIT = 50;
 
+const ENJOYMENT_OPTIONS = [
+  { id: "Sermon", label: "Sermon" },
+  { id: "Prayer", label: "Prayer" },
+  { id: "Praise and worship", label: "Praise and Worship" },
+  { id: "Ambience", label: "Ambience" },
+];
+
 export default function FirstTimers() {
   const [showImportDialog, setShowImportDialog] = useState(false);
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [editingFirstTimer, setEditingFirstTimer] = useState<FirstTimer | null>(null);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [seeingAgain, setSeeingAgain] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const { toast } = useToast();
+
+  const editForm = useForm<InsertFirstTimer>({
+    resolver: zodResolver(insertFirstTimerSchema),
+    defaultValues: {
+      firstName: "", lastName: "", gender: "Male", mobilePhone: "", email: "",
+      address: "", dateOfBirth: "", closestAxis: "", basedInCity: "Yes",
+      seeingAgain: "Yes", enjoyedAboutService: [], howHeardAbout: "Oikia member",
+      whoInvited: "", feedback: "", branchId: "",
+    },
+  });
 
   const params = new URLSearchParams();
   params.set("page", String(page));
@@ -90,6 +115,48 @@ export default function FirstTimers() {
 
   const handleConvert = (firstTimerId: string) => {
     convertMutation.mutate(firstTimerId);
+  };
+
+  const editMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<InsertFirstTimer> }) => {
+      return await apiRequest("PATCH", `/api/first-timers/${id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/first-timers"] });
+      setShowEditDialog(false);
+      setEditingFirstTimer(null);
+      toast({ title: "Success", description: "First timer updated successfully" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to update first timer", variant: "destructive" });
+    },
+  });
+
+  const handleOpenEdit = (ft: FirstTimer) => {
+    setEditingFirstTimer(ft);
+    editForm.reset({
+      firstName: ft.firstName,
+      lastName: ft.lastName,
+      gender: ft.gender as InsertFirstTimer["gender"],
+      mobilePhone: ft.mobilePhone,
+      email: ft.email || "",
+      address: ft.address || "",
+      dateOfBirth: ft.dateOfBirth || "",
+      closestAxis: ft.closestAxis,
+      basedInCity: ft.basedInCity as InsertFirstTimer["basedInCity"],
+      seeingAgain: ft.seeingAgain as InsertFirstTimer["seeingAgain"],
+      enjoyedAboutService: (ft.enjoyedAboutService || []) as InsertFirstTimer["enjoyedAboutService"],
+      howHeardAbout: ft.howHeardAbout as InsertFirstTimer["howHeardAbout"],
+      whoInvited: ft.whoInvited || "",
+      feedback: ft.feedback || "",
+      branchId: ft.branchId || "",
+    });
+    setShowEditDialog(true);
+  };
+
+  const handleEditSubmit = (data: InsertFirstTimer) => {
+    if (!editingFirstTimer) return;
+    editMutation.mutate({ id: editingFirstTimer.id, data });
   };
 
   const handleExportCSV = async () => {
@@ -279,6 +346,7 @@ export default function FirstTimers() {
           firstTimers={firstTimers}
           onConvert={handleConvert}
           isConverting={convertMutation.isPending}
+          onEdit={handleOpenEdit}
         />
       )}
 
@@ -319,6 +387,154 @@ export default function FirstTimers() {
           onClose={() => setShowImportDialog(false)}
         />
       )}
+
+      <Dialog open={showEditDialog} onOpenChange={(open) => { if (!open) { setShowEditDialog(false); setEditingFirstTimer(null); } }}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit First Timer — {editingFirstTimer?.firstName} {editingFirstTimer?.lastName}</DialogTitle>
+          </DialogHeader>
+          <Form {...editForm}>
+            <form onSubmit={editForm.handleSubmit(handleEditSubmit)} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <FormField control={editForm.control} name="firstName" render={({ field }) => (
+                  <FormItem><FormLabel>First Name *</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
+                )} />
+                <FormField control={editForm.control} name="lastName" render={({ field }) => (
+                  <FormItem><FormLabel>Last Name *</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
+                )} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <FormField control={editForm.control} name="gender" render={({ field }) => (
+                  <FormItem><FormLabel>Gender *</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                      <SelectContent>
+                        <SelectItem value="Male">Male</SelectItem>
+                        <SelectItem value="Female">Female</SelectItem>
+                      </SelectContent>
+                    </Select><FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={editForm.control} name="dateOfBirth" render={({ field }) => (
+                  <FormItem><FormLabel>Date of Birth</FormLabel><FormControl><Input type="date" {...field} /></FormControl><FormMessage /></FormItem>
+                )} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <FormField control={editForm.control} name="mobilePhone" render={({ field }) => (
+                  <FormItem><FormLabel>Mobile Phone *</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
+                )} />
+                <FormField control={editForm.control} name="email" render={({ field }) => (
+                  <FormItem><FormLabel>Email</FormLabel><FormControl><Input type="email" {...field} /></FormControl><FormMessage /></FormItem>
+                )} />
+              </div>
+
+              <FormField control={editForm.control} name="address" render={({ field }) => (
+                <FormItem><FormLabel>Address</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
+              )} />
+
+              <div className="grid grid-cols-2 gap-4">
+                <FormField control={editForm.control} name="branchId" render={({ field }) => (
+                  <FormItem><FormLabel>Branch</FormLabel>
+                    <Select onValueChange={(v) => field.onChange(v === "__none__" ? "" : v)} value={field.value || "__none__"}>
+                      <FormControl><SelectTrigger><SelectValue placeholder="Select branch" /></SelectTrigger></FormControl>
+                      <SelectContent>
+                        <SelectItem value="__none__">No branch</SelectItem>
+                        {branches?.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select><FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={editForm.control} name="closestAxis" render={({ field }) => (
+                  <FormItem><FormLabel>Closest Axis *</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
+                )} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <FormField control={editForm.control} name="basedInCity" render={({ field }) => (
+                  <FormItem><FormLabel>Based in City? *</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                      <SelectContent>
+                        <SelectItem value="Yes">Yes</SelectItem>
+                        <SelectItem value="No">No</SelectItem>
+                      </SelectContent>
+                    </Select><FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={editForm.control} name="seeingAgain" render={({ field }) => (
+                  <FormItem><FormLabel>Seeing Again? *</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                      <SelectContent>
+                        <SelectItem value="Yes">Yes</SelectItem>
+                        <SelectItem value="No">No</SelectItem>
+                        <SelectItem value="Maybe">Maybe</SelectItem>
+                      </SelectContent>
+                    </Select><FormMessage />
+                  </FormItem>
+                )} />
+              </div>
+
+              <FormField control={editForm.control} name="enjoyedAboutService" render={() => (
+                <FormItem>
+                  <FormLabel>Enjoyed About Service *</FormLabel>
+                  <div className="grid grid-cols-2 gap-2">
+                    {ENJOYMENT_OPTIONS.map((opt) => (
+                      <FormField key={opt.id} control={editForm.control} name="enjoyedAboutService" render={({ field }) => (
+                        <FormItem className="flex items-center gap-2 space-y-0">
+                          <FormControl>
+                            <Checkbox
+                              checked={field.value?.includes(opt.id as any)}
+                              onCheckedChange={(checked) => {
+                                const current = field.value || [];
+                                field.onChange(checked ? [...current, opt.id as any] : current.filter((v) => v !== opt.id));
+                              }}
+                            />
+                          </FormControl>
+                          <FormLabel className="font-normal">{opt.label}</FormLabel>
+                        </FormItem>
+                      )} />
+                    ))}
+                  </div>
+                  <FormMessage />
+                </FormItem>
+              )} />
+
+              <FormField control={editForm.control} name="howHeardAbout" render={({ field }) => (
+                <FormItem><FormLabel>How Heard About *</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      <SelectItem value="Oikia member">Oikia member</SelectItem>
+                      <SelectItem value="Social media">Social media</SelectItem>
+                      <SelectItem value="Billboard/Lamp post">Billboard/Lamp post</SelectItem>
+                    </SelectContent>
+                  </Select><FormMessage />
+                </FormItem>
+              )} />
+
+              <FormField control={editForm.control} name="whoInvited" render={({ field }) => (
+                <FormItem><FormLabel>Who Invited</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
+              )} />
+
+              <FormField control={editForm.control} name="feedback" render={({ field }) => (
+                <FormItem><FormLabel>Feedback</FormLabel><FormControl><Textarea {...field} rows={3} /></FormControl><FormMessage /></FormItem>
+              )} />
+
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => { setShowEditDialog(false); setEditingFirstTimer(null); }}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={editMutation.isPending}>
+                  {editMutation.isPending ? "Saving..." : "Save Changes"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

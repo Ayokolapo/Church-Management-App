@@ -1,4 +1,4 @@
-import { UserCheck } from "lucide-react";
+import { UserCheck, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -16,9 +16,10 @@ interface FirstTimerTableProps {
   firstTimers: FirstTimer[];
   onConvert: (id: string) => void;
   isConverting: boolean;
+  onEdit: (firstTimer: FirstTimer) => void;
 }
 
-export function FirstTimerTable({ firstTimers, onConvert, isConverting }: FirstTimerTableProps) {
+export function FirstTimerTable({ firstTimers, onConvert, isConverting, onEdit }: FirstTimerTableProps) {
   if (firstTimers.length === 0) {
     return (
       <div className="text-center py-12 text-muted-foreground">
@@ -69,17 +70,28 @@ export function FirstTimerTable({ firstTimers, onConvert, isConverting }: FirstT
                 )}
               </TableCell>
               <TableCell className="text-right">
-                {!(firstTimer.convertedToMember && firstTimer.memberId) && (
+                <div className="flex items-center justify-end gap-2">
                   <Button
                     size="sm"
-                    onClick={() => onConvert(firstTimer.id)}
-                    disabled={isConverting}
-                    data-testid={`button-convert-${firstTimer.id}`}
+                    variant="outline"
+                    onClick={() => onEdit(firstTimer)}
+                    data-testid={`button-edit-${firstTimer.id}`}
                   >
-                    <UserCheck className="w-4 h-4 mr-2" />
-                    Convert to Member
+                    <Pencil className="w-4 h-4 mr-2" />
+                    Edit
                   </Button>
-                )}
+                  {!(firstTimer.convertedToMember && firstTimer.memberId) && (
+                    <Button
+                      size="sm"
+                      onClick={() => onConvert(firstTimer.id)}
+                      disabled={isConverting}
+                      data-testid={`button-convert-${firstTimer.id}`}
+                    >
+                      <UserCheck className="w-4 h-4 mr-2" />
+                      Convert to Member
+                    </Button>
+                  )}
+                </div>
               </TableCell>
             </TableRow>
           ))}
