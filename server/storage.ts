@@ -55,7 +55,7 @@ import { eq, and, sql, desc, inArray, asc, gt, gte, lte, ilike, or } from "drizz
 
 export interface IStorage {
   // Members
-  getMembers(filters?: { status?: string; statuses?: string[]; gender?: string; occupation?: string; cluster?: string; search?: string; page?: number; limit?: number }): Promise<PaginatedResult<MemberWithAttendanceStats>>;
+  getMembers(filters?: { status?: string; statuses?: string[]; gender?: string; occupation?: string; cluster?: string; search?: string; page?: number; limit?: number; minAttended?: number; maxAttended?: number; lastAttendedWithin?: number; notAttendedSince?: number }): Promise<PaginatedResult<MemberWithAttendanceStats>>;
   getMembersList(): Promise<MemberSlim[]>;
   getMemberById(id: string): Promise<Member | undefined>;
   createMember(member: InsertMember): Promise<Member>;
@@ -63,7 +63,7 @@ export interface IStorage {
   deleteMember(id: string): Promise<void>;
   bulkDeleteMembers(ids: string[]): Promise<void>;
   bulkUpdateMembers(ids: string[], updates: Partial<InsertMember>): Promise<void>;
-  getMemberIdsByFilters(filters: { status?: string; statuses?: string[]; gender?: string; occupation?: string; cluster?: string; search?: string }): Promise<string[]>;
+  getMemberIdsByFilters(filters: { status?: string; statuses?: string[]; gender?: string; occupation?: string; cluster?: string; search?: string; minAttended?: number; maxAttended?: number; lastAttendedWithin?: number; notAttendedSince?: number }): Promise<string[]>;
   findDuplicates(): Promise<{ reason: string; members: Member[] }[]>;
   mergeMembers(primaryId: string, duplicateIds: string[]): Promise<Member>;
 
@@ -251,6 +251,10 @@ export class DatabaseStorage implements IStorage {
     search?: string;
     page?: number;
     limit?: number;
+    minAttended?: number;
+    maxAttended?: number;
+    lastAttendedWithin?: number;
+    notAttendedSince?: number;
   }): Promise<PaginatedResult<MemberWithAttendanceStats>> {
     const page = filters?.page ?? 1;
     const limit = filters?.limit ?? 50;
@@ -274,6 +278,30 @@ export class DatabaseStorage implements IStorage {
     if (filters?.search) {
       const term = `%${filters.search}%`;
       conditions.push(sql`(${members.firstName} ILIKE ${term} OR ${members.lastName} ILIKE ${term} OR ${members.mobilePhone} ILIKE ${term})`);
+    }
+    if (filters?.minAttended !== undefined) {
+      conditions.push(sql`(
+        (SELECT COUNT(*) FROM attendance WHERE member_id = ${members.id} AND status = 'Present') +
+        (SELECT COUNT(*) FROM cell_attendance WHERE member_id = ${members.id})
+      ) >= ${filters.minAttended}`);
+    }
+    if (filters?.maxAttended !== undefined) {
+      conditions.push(sql`(
+        (SELECT COUNT(*) FROM attendance WHERE member_id = ${members.id} AND status = 'Present') +
+        (SELECT COUNT(*) FROM cell_attendance WHERE member_id = ${members.id})
+      ) <= ${filters.maxAttended}`);
+    }
+    if (filters?.lastAttendedWithin !== undefined) {
+      conditions.push(sql`GREATEST(
+        COALESCE((SELECT MAX(service_date)::date FROM attendance WHERE member_id = ${members.id} AND status = 'Present'), '1900-01-01'::date),
+        COALESCE((SELECT MAX(meeting_date)::date FROM cell_attendance WHERE member_id = ${members.id}), '1900-01-01'::date)
+      ) >= CURRENT_DATE - ${filters.lastAttendedWithin}`);
+    }
+    if (filters?.notAttendedSince !== undefined) {
+      conditions.push(sql`GREATEST(
+        COALESCE((SELECT MAX(service_date)::date FROM attendance WHERE member_id = ${members.id} AND status = 'Present'), '1900-01-01'::date),
+        COALESCE((SELECT MAX(meeting_date)::date FROM cell_attendance WHERE member_id = ${members.id}), '1900-01-01'::date)
+      ) < CURRENT_DATE - ${filters.notAttendedSince}`);
     }
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
@@ -418,7 +446,7 @@ export class DatabaseStorage implements IStorage {
     await db.update(members).set({ ...updates, updatedAt: new Date() }).where(inArray(members.id, ids));
   }
 
-  async getMemberIdsByFilters(filters: { status?: string; statuses?: string[]; gender?: string; occupation?: string; cluster?: string; search?: string }): Promise<string[]> {
+  async getMemberIdsByFilters(filters: { status?: string; statuses?: string[]; gender?: string; occupation?: string; cluster?: string; search?: string; minAttended?: number; maxAttended?: number; lastAttendedWithin?: number; notAttendedSince?: number }): Promise<string[]> {
     const conditions = [];
     if (filters.statuses && filters.statuses.length > 0) {
       conditions.push(inArray(members.status, filters.statuses));
@@ -431,6 +459,30 @@ export class DatabaseStorage implements IStorage {
     if (filters.search) {
       const term = `%${filters.search}%`;
       conditions.push(sql`(${members.firstName} ILIKE ${term} OR ${members.lastName} ILIKE ${term} OR ${members.mobilePhone} ILIKE ${term})`);
+    }
+    if (filters.minAttended !== undefined) {
+      conditions.push(sql`(
+        (SELECT COUNT(*) FROM attendance WHERE member_id = ${members.id} AND status = 'Present') +
+        (SELECT COUNT(*) FROM cell_attendance WHERE member_id = ${members.id})
+      ) >= ${filters.minAttended}`);
+    }
+    if (filters.maxAttended !== undefined) {
+      conditions.push(sql`(
+        (SELECT COUNT(*) FROM attendance WHERE member_id = ${members.id} AND status = 'Present') +
+        (SELECT COUNT(*) FROM cell_attendance WHERE member_id = ${members.id})
+      ) <= ${filters.maxAttended}`);
+    }
+    if (filters.lastAttendedWithin !== undefined) {
+      conditions.push(sql`GREATEST(
+        COALESCE((SELECT MAX(service_date)::date FROM attendance WHERE member_id = ${members.id} AND status = 'Present'), '1900-01-01'::date),
+        COALESCE((SELECT MAX(meeting_date)::date FROM cell_attendance WHERE member_id = ${members.id}), '1900-01-01'::date)
+      ) >= CURRENT_DATE - ${filters.lastAttendedWithin}`);
+    }
+    if (filters.notAttendedSince !== undefined) {
+      conditions.push(sql`GREATEST(
+        COALESCE((SELECT MAX(service_date)::date FROM attendance WHERE member_id = ${members.id} AND status = 'Present'), '1900-01-01'::date),
+        COALESCE((SELECT MAX(meeting_date)::date FROM cell_attendance WHERE member_id = ${members.id}), '1900-01-01'::date)
+      ) < CURRENT_DATE - ${filters.notAttendedSince}`);
     }
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
     const rows = await db.select({ id: members.id }).from(members).where(whereClause);

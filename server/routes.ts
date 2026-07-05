@@ -536,12 +536,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Count members matching attendance-based criteria (for smart bulk update preview)
+  app.get("/api/members/count-by-criteria", isAuthenticated, requirePermission("members.view"), async (req, res) => {
+    try {
+      const parseIntParam = (v: unknown) => v !== undefined && v !== "" ? parseInt(v as string, 10) : undefined;
+      const criteria = {
+        status: req.query.status as string | undefined,
+        minAttended: parseIntParam(req.query.minAttended),
+        maxAttended: parseIntParam(req.query.maxAttended),
+        lastAttendedWithin: parseIntParam(req.query.lastAttendedWithin),
+        notAttendedSince: parseIntParam(req.query.notAttendedSince),
+        page: 1,
+        limit: 1,
+      };
+      const result = await storage.getMembers(criteria);
+      res.json({ count: result.total });
+    } catch (error) {
+      console.error("Error counting members by criteria:", error);
+      res.status(500).json({ error: "Failed to count members" });
+    }
+  });
+
+  // Bulk update members by attendance criteria (smart bulk update)
+  app.patch("/api/members/bulk-by-criteria", isAuthenticated, requirePermission("members.edit"), async (req, res) => {
+    try {
+      const { criteria, updates } = req.body as {
+        criteria: { status?: string; minAttended?: number; maxAttended?: number; lastAttendedWithin?: number; notAttendedSince?: number };
+        updates: Record<string, string>;
+      };
+      if (!updates || Object.keys(updates).length === 0) {
+        return res.status(400).json({ error: "No updates provided" });
+      }
+      const ids = await storage.getMemberIdsByFilters(criteria);
+      if (ids.length === 0) return res.json({ updated: 0 });
+      await storage.bulkUpdateMembers(ids, updates);
+      res.json({ updated: ids.length });
+    } catch (error) {
+      console.error("Error bulk updating members by criteria:", error);
+      res.status(500).json({ error: "Failed to bulk update members" });
+    }
+  });
+
   // Member routes
   app.get("/api/members", isAuthenticated, requirePermission("members.view"), async (req, res) => {
     try {
       const statusesParam = req.query.statuses as string | undefined;
       const page = req.query.page ? parseInt(req.query.page as string, 10) : 1;
       const limit = req.query.limit ? Math.min(parseInt(req.query.limit as string, 10), 200) : 50;
+      const parseIntParam = (v: unknown) => v !== undefined && v !== "" ? parseInt(v as string, 10) : undefined;
       const filters = {
         status: req.query.status as string,
         statuses: statusesParam ? statusesParam.split(',').filter(Boolean) : undefined,
@@ -551,6 +593,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         search: req.query.search as string | undefined,
         page,
         limit,
+        minAttended: parseIntParam(req.query.minAttended),
+        maxAttended: parseIntParam(req.query.maxAttended),
+        lastAttendedWithin: parseIntParam(req.query.lastAttendedWithin),
+        notAttendedSince: parseIntParam(req.query.notAttendedSince),
       };
       const result = await storage.getMembers(filters);
       res.json(result);

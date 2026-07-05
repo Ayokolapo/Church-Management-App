@@ -18,6 +18,8 @@ interface MemberFiltersProps {
     gender: string;
     occupation: string;
     cluster: string;
+    timesAttended: string;
+    lastAttended: string;
   };
   onFiltersChange: (filters: any) => void;
 }
@@ -33,6 +35,8 @@ export function MemberFilters({ filters, onFiltersChange }: MemberFiltersProps) 
       gender: "",
       occupation: "",
       cluster: "",
+      timesAttended: "",
+      lastAttended: "",
     });
   };
 
@@ -50,7 +54,7 @@ export function MemberFilters({ filters, onFiltersChange }: MemberFiltersProps) 
             Clear All
           </Button>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
           <div className="space-y-2">
             <Label>Status</Label>
             <Select
@@ -124,6 +128,49 @@ export function MemberFilters({ filters, onFiltersChange }: MemberFiltersProps) 
                     {cluster.name}
                   </SelectItem>
                 ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Times Attended</Label>
+            <Select
+              value={toSelectValue(filters.timesAttended)}
+              onValueChange={(value) => onFiltersChange({ ...filters, timesAttended: fromSelectValue(value) })}
+            >
+              <SelectTrigger data-testid="select-filter-times-attended">
+                <SelectValue placeholder="Any" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>Any</SelectItem>
+                <SelectItem value="never">Never (0)</SelectItem>
+                <SelectItem value="1-3">1 – 3 times</SelectItem>
+                <SelectItem value="4-9">4 – 9 times</SelectItem>
+                <SelectItem value="10-19">10 – 19 times</SelectItem>
+                <SelectItem value="20+">20+ times</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Last Attended</Label>
+            <Select
+              value={toSelectValue(filters.lastAttended)}
+              onValueChange={(value) => onFiltersChange({ ...filters, lastAttended: fromSelectValue(value) })}
+            >
+              <SelectTrigger data-testid="select-filter-last-attended">
+                <SelectValue placeholder="Any time" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>Any time</SelectItem>
+                <SelectItem value="within30">Last 30 days</SelectItem>
+                <SelectItem value="within90">Last 90 days</SelectItem>
+                <SelectItem value="within180">Last 180 days</SelectItem>
+                <SelectItem value="over30">31+ days ago</SelectItem>
+                <SelectItem value="over90">91+ days ago</SelectItem>
+                <SelectItem value="over180">181+ days ago</SelectItem>
+                <SelectItem value="over365">1+ year ago</SelectItem>
+                <SelectItem value="never">Never attended</SelectItem>
               </SelectContent>
             </Select>
           </div>

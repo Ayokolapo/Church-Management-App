@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Download, Upload, Filter, Columns, Search, GitMerge, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, Download, Upload, Filter, Columns, Search, GitMerge, ChevronLeft, ChevronRight, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MemberTable } from "@/components/member-table";
@@ -10,6 +10,7 @@ import { MergeDuplicatesDialog } from "@/components/merge-duplicates-dialog";
 import { ColumnVisibilityDialog, DEFAULT_VISIBLE_COLUMNS } from "@/components/column-visibility-dialog";
 import { MemberFilters } from "@/components/member-filters";
 import { BulkUpdateDialog } from "@/components/bulk-update-dialog";
+import { SmartBulkUpdateDialog } from "@/components/smart-bulk-update-dialog";
 import type { MemberWithAttendanceStats, PaginatedResult } from "@shared/schema";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiRequest } from "@/lib/queryClient";
@@ -26,6 +27,7 @@ export default function Members() {
   const [showMergeDialog, setShowMergeDialog] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [showBulkUpdateDialog, setShowBulkUpdateDialog] = useState(false);
+  const [showSmartBulkDialog, setShowSmartBulkDialog] = useState(false);
   const [searchInput, setSearchInput] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [page, setPage] = useState(1);
@@ -38,6 +40,8 @@ export default function Members() {
     gender: "",
     occupation: "",
     cluster: "",
+    timesAttended: "",
+    lastAttended: "",
   });
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isSelectAllMode, setIsSelectAllMode] = useState(false);
@@ -56,13 +60,13 @@ export default function Members() {
   // Reset to page 1 when filters change
   useEffect(() => {
     setPage(1);
-  }, [filters.status, filters.gender, filters.occupation, filters.cluster]);
+  }, [filters.status, filters.gender, filters.occupation, filters.cluster, filters.timesAttended, filters.lastAttended]);
 
   // Reset selection when filters/search/page change
   useEffect(() => {
     setSelectedIds(new Set());
     setIsSelectAllMode(false);
-  }, [filters.status, filters.gender, filters.occupation, filters.cluster, searchTerm, page]);
+  }, [filters.status, filters.gender, filters.occupation, filters.cluster, filters.timesAttended, filters.lastAttended, searchTerm, page]);
 
   const handleToggleSelect = (id: string) => {
     setIsSelectAllMode(false);
@@ -131,6 +135,28 @@ export default function Members() {
     });
   }, []);
 
+  const attendanceParams = (f: typeof filters) => {
+    const p: Record<string, string> = {};
+    switch (f.timesAttended) {
+      case "never":  p.maxAttended = "0"; break;
+      case "1-3":    p.minAttended = "1"; p.maxAttended = "3"; break;
+      case "4-9":    p.minAttended = "4"; p.maxAttended = "9"; break;
+      case "10-19":  p.minAttended = "10"; p.maxAttended = "19"; break;
+      case "20+":    p.minAttended = "20"; break;
+    }
+    switch (f.lastAttended) {
+      case "within30":  p.lastAttendedWithin = "30"; break;
+      case "within90":  p.lastAttendedWithin = "90"; break;
+      case "within180": p.lastAttendedWithin = "180"; break;
+      case "over30":    p.notAttendedSince = "30"; break;
+      case "over90":    p.notAttendedSince = "90"; break;
+      case "over180":   p.notAttendedSince = "180"; break;
+      case "over365":   p.notAttendedSince = "365"; break;
+      case "never":     p.notAttendedSince = "36500"; break;
+    }
+    return p;
+  };
+
   const { data: result, isLoading, isError, error } = useQuery<PaginatedResult<MemberWithAttendanceStats>>({
     queryKey: [
       "/api/members",
@@ -138,6 +164,8 @@ export default function Members() {
       filters.gender,
       filters.occupation,
       filters.cluster,
+      filters.timesAttended,
+      filters.lastAttended,
       searchTerm,
       page,
     ],
@@ -150,6 +178,7 @@ export default function Members() {
       if (searchTerm) params.append("search", searchTerm);
       params.append("page", String(page));
       params.append("limit", String(PAGE_LIMIT));
+      Object.entries(attendanceParams(filters)).forEach(([k, v]) => params.append(k, v));
       const res = await fetch(`/api/members?${params.toString()}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch members");
       return res.json();
@@ -225,6 +254,14 @@ export default function Members() {
           >
             <GitMerge className="w-4 h-4 mr-2" />
             Find Duplicates
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => setShowSmartBulkDialog(true)}
+            data-testid="button-smart-bulk-update"
+          >
+            <Wand2 className="w-4 h-4 mr-2" />
+            Smart Update
           </Button>
         </div>
       </div>
@@ -396,6 +433,14 @@ export default function Members() {
           count={isSelectAllMode ? total : selectedIds.size}
           onConfirm={(updates) => bulkUpdateMutation.mutate(updates)}
           isPending={bulkUpdateMutation.isPending}
+        />
+      )}
+
+      {showSmartBulkDialog && (
+        <SmartBulkUpdateDialog
+          open={showSmartBulkDialog}
+          onClose={() => setShowSmartBulkDialog(false)}
+          onSuccess={() => queryClient.invalidateQueries({ queryKey: ["/api/members"] })}
         />
       )}
     </div>
