@@ -42,6 +42,7 @@ export default function Members() {
     cluster: "",
     timesAttended: "",
     lastAttended: "",
+    archiveStatuses: [] as string[],
   });
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isSelectAllMode, setIsSelectAllMode] = useState(false);
@@ -57,16 +58,18 @@ export default function Members() {
     }, 300);
   };
 
+  const archiveKey = filters.archiveStatuses.join(",");
+
   // Reset to page 1 when filters change
   useEffect(() => {
     setPage(1);
-  }, [filters.status, filters.gender, filters.occupation, filters.cluster, filters.timesAttended, filters.lastAttended]);
+  }, [filters.status, filters.gender, filters.occupation, filters.cluster, filters.timesAttended, filters.lastAttended, archiveKey]);
 
   // Reset selection when filters/search/page change
   useEffect(() => {
     setSelectedIds(new Set());
     setIsSelectAllMode(false);
-  }, [filters.status, filters.gender, filters.occupation, filters.cluster, filters.timesAttended, filters.lastAttended, searchTerm, page]);
+  }, [filters.status, filters.gender, filters.occupation, filters.cluster, filters.timesAttended, filters.lastAttended, archiveKey, searchTerm, page]);
 
   const handleToggleSelect = (id: string) => {
     setIsSelectAllMode(false);
@@ -166,6 +169,7 @@ export default function Members() {
       filters.cluster,
       filters.timesAttended,
       filters.lastAttended,
+      archiveKey,
       searchTerm,
       page,
     ],
@@ -176,6 +180,7 @@ export default function Members() {
       if (filters.occupation) params.append("occupation", filters.occupation);
       if (filters.cluster) params.append("cluster", filters.cluster);
       if (searchTerm) params.append("search", searchTerm);
+      if (filters.archiveStatuses.length > 0) params.append("archiveStatuses", filters.archiveStatuses.join(","));
       params.append("page", String(page));
       params.append("limit", String(PAGE_LIMIT));
       Object.entries(attendanceParams(filters)).forEach(([k, v]) => params.append(k, v));

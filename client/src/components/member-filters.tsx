@@ -7,10 +7,22 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { X } from "lucide-react";
+import { X, ChevronDown } from "lucide-react";
 import type { Cluster } from "@shared/schema";
+
+const ARCHIVE_OPTIONS = [
+  { value: "__null__", label: "Not set" },
+  { value: "Active", label: "Active" },
+  { value: "Relocated", label: "Relocated" },
+  { value: "Has a church", label: "Has a church" },
+  { value: "Wrong number", label: "Wrong number" },
+  { value: "Unreachable", label: "Unreachable" },
+  { value: "Not interested", label: "Not interested" },
+];
 
 interface MemberFiltersProps {
   filters: {
@@ -20,6 +32,7 @@ interface MemberFiltersProps {
     cluster: string;
     timesAttended: string;
     lastAttended: string;
+    archiveStatuses: string[];
   };
   onFiltersChange: (filters: any) => void;
 }
@@ -37,7 +50,16 @@ export function MemberFilters({ filters, onFiltersChange }: MemberFiltersProps) 
       cluster: "",
       timesAttended: "",
       lastAttended: "",
+      archiveStatuses: [],
     });
+  };
+
+  const toggleArchiveStatus = (value: string) => {
+    const current = filters.archiveStatuses;
+    const next = current.includes(value)
+      ? current.filter(v => v !== value)
+      : [...current, value];
+    onFiltersChange({ ...filters, archiveStatuses: next });
   };
 
   const ALL = "__all__";
@@ -54,7 +76,7 @@ export function MemberFilters({ filters, onFiltersChange }: MemberFiltersProps) 
             Clear All
           </Button>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="space-y-2">
             <Label>Status</Label>
             <Select
@@ -173,6 +195,53 @@ export function MemberFilters({ filters, onFiltersChange }: MemberFiltersProps) 
                 <SelectItem value="never">Never attended</SelectItem>
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Archive Status</Label>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  className="w-full justify-between font-normal h-9 px-3"
+                  data-testid="select-filter-archive"
+                >
+                  {filters.archiveStatuses.length === 0 ? (
+                    <span className="text-muted-foreground">All</span>
+                  ) : (
+                    <span>{filters.archiveStatuses.length} selected</span>
+                  )}
+                  <ChevronDown className="w-4 h-4 opacity-50 shrink-0" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="p-1 w-48" align="start">
+                {ARCHIVE_OPTIONS.map(opt => (
+                  <div
+                    key={opt.value}
+                    className="flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer hover:bg-muted"
+                    onClick={() => toggleArchiveStatus(opt.value)}
+                  >
+                    <Checkbox
+                      checked={filters.archiveStatuses.includes(opt.value)}
+                      onCheckedChange={() => toggleArchiveStatus(opt.value)}
+                    />
+                    <span className="text-sm">{opt.label}</span>
+                  </div>
+                ))}
+                {filters.archiveStatuses.length > 0 && (
+                  <div className="border-t mt-1 pt-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full h-7 text-xs"
+                      onClick={() => onFiltersChange({ ...filters, archiveStatuses: [] })}
+                    >
+                      Clear
+                    </Button>
+                  </div>
+                )}
+              </PopoverContent>
+            </Popover>
           </div>
         </div>
       </CardContent>

@@ -51,11 +51,11 @@ import {
   type EmailTemplate,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, sql, desc, inArray, asc, gt, gte, lte, ilike, or } from "drizzle-orm";
+import { eq, and, sql, desc, inArray, asc, gt, gte, lte, ilike, or, isNull } from "drizzle-orm";
 
 export interface IStorage {
   // Members
-  getMembers(filters?: { status?: string; statuses?: string[]; gender?: string; occupation?: string; cluster?: string; search?: string; page?: number; limit?: number; minAttended?: number; maxAttended?: number; lastAttendedWithin?: number; notAttendedSince?: number }): Promise<PaginatedResult<MemberWithAttendanceStats>>;
+  getMembers(filters?: { status?: string; statuses?: string[]; gender?: string; occupation?: string; cluster?: string; search?: string; page?: number; limit?: number; minAttended?: number; maxAttended?: number; lastAttendedWithin?: number; notAttendedSince?: number; archiveStatuses?: string[] }): Promise<PaginatedResult<MemberWithAttendanceStats>>;
   getMembersList(): Promise<MemberSlim[]>;
   getMemberById(id: string): Promise<Member | undefined>;
   createMember(member: InsertMember): Promise<Member>;
@@ -63,7 +63,7 @@ export interface IStorage {
   deleteMember(id: string): Promise<void>;
   bulkDeleteMembers(ids: string[]): Promise<void>;
   bulkUpdateMembers(ids: string[], updates: Partial<InsertMember>): Promise<void>;
-  getMemberIdsByFilters(filters: { status?: string; statuses?: string[]; gender?: string; occupation?: string; cluster?: string; search?: string; minAttended?: number; maxAttended?: number; lastAttendedWithin?: number; notAttendedSince?: number }): Promise<string[]>;
+  getMemberIdsByFilters(filters: { status?: string; statuses?: string[]; gender?: string; occupation?: string; cluster?: string; search?: string; minAttended?: number; maxAttended?: number; lastAttendedWithin?: number; notAttendedSince?: number; archiveStatuses?: string[] }): Promise<string[]>;
   findDuplicates(): Promise<{ reason: string; members: Member[] }[]>;
   mergeMembers(primaryId: string, duplicateIds: string[]): Promise<Member>;
 
@@ -279,6 +279,17 @@ export class DatabaseStorage implements IStorage {
       const term = `%${filters.search}%`;
       conditions.push(sql`(${members.firstName} ILIKE ${term} OR ${members.lastName} ILIKE ${term} OR ${members.mobilePhone} ILIKE ${term})`);
     }
+    if (filters?.archiveStatuses && filters.archiveStatuses.length > 0) {
+      const hasNull = filters.archiveStatuses.includes('__null__');
+      const realValues = filters.archiveStatuses.filter(v => v !== '__null__');
+      if (hasNull && realValues.length > 0) {
+        conditions.push(or(isNull(members.archive), inArray(members.archive, realValues))!);
+      } else if (hasNull) {
+        conditions.push(isNull(members.archive));
+      } else {
+        conditions.push(inArray(members.archive, realValues));
+      }
+    }
     if (filters?.minAttended !== undefined) {
       conditions.push(sql`(
         (SELECT COUNT(*) FROM attendance WHERE member_id = ${members.id} AND status = 'Present') +
@@ -452,7 +463,7 @@ export class DatabaseStorage implements IStorage {
     await db.update(members).set({ ...updates, updatedAt: new Date() }).where(inArray(members.id, ids));
   }
 
-  async getMemberIdsByFilters(filters: { status?: string; statuses?: string[]; gender?: string; occupation?: string; cluster?: string; search?: string; minAttended?: number; maxAttended?: number; lastAttendedWithin?: number; notAttendedSince?: number }): Promise<string[]> {
+  async getMemberIdsByFilters(filters: { status?: string; statuses?: string[]; gender?: string; occupation?: string; cluster?: string; search?: string; minAttended?: number; maxAttended?: number; lastAttendedWithin?: number; notAttendedSince?: number; archiveStatuses?: string[] }): Promise<string[]> {
     const conditions = [];
     if (filters.statuses && filters.statuses.length > 0) {
       conditions.push(inArray(members.status, filters.statuses));
@@ -465,6 +476,17 @@ export class DatabaseStorage implements IStorage {
     if (filters.search) {
       const term = `%${filters.search}%`;
       conditions.push(sql`(${members.firstName} ILIKE ${term} OR ${members.lastName} ILIKE ${term} OR ${members.mobilePhone} ILIKE ${term})`);
+    }
+    if (filters.archiveStatuses && filters.archiveStatuses.length > 0) {
+      const hasNull = filters.archiveStatuses.includes('__null__');
+      const realValues = filters.archiveStatuses.filter(v => v !== '__null__');
+      if (hasNull && realValues.length > 0) {
+        conditions.push(or(isNull(members.archive), inArray(members.archive, realValues))!);
+      } else if (hasNull) {
+        conditions.push(isNull(members.archive));
+      } else {
+        conditions.push(inArray(members.archive, realValues));
+      }
     }
     if (filters.minAttended !== undefined) {
       conditions.push(sql`(

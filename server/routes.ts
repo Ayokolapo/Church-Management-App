@@ -581,6 +581,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/members", isAuthenticated, requirePermission("members.view"), async (req, res) => {
     try {
       const statusesParam = req.query.statuses as string | undefined;
+      const archiveStatusesParam = req.query.archiveStatuses as string | undefined;
       const page = req.query.page ? parseInt(req.query.page as string, 10) : 1;
       const limit = req.query.limit ? Math.min(parseInt(req.query.limit as string, 10), 200) : 50;
       const parseIntParam = (v: unknown) => v !== undefined && v !== "" ? parseInt(v as string, 10) : undefined;
@@ -597,6 +598,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         maxAttended: parseIntParam(req.query.maxAttended),
         lastAttendedWithin: parseIntParam(req.query.lastAttendedWithin),
         notAttendedSince: parseIntParam(req.query.notAttendedSince),
+        archiveStatuses: archiveStatusesParam ? archiveStatusesParam.split(',').filter(Boolean) : undefined,
       };
       const result = await storage.getMembers(filters);
       res.json(result);
