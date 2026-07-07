@@ -131,7 +131,7 @@ export function SmartBulkUpdateDialog({ open, onClose, onSuccess }: SmartBulkUpd
             <p className="text-sm font-medium text-muted-foreground uppercase tracking-wide">Step 1 — Who to update</p>
 
             <div className="space-y-2">
-              <Label>Times attended (Sunday + Cell)</Label>
+              <Label>Times attended (Sunday service)</Label>
               <div className="flex items-center gap-2 flex-wrap">
                 <Select value={timesOp} onValueChange={(v) => setTimesOp(v as TimesOp)}>
                   <SelectTrigger className="w-36">

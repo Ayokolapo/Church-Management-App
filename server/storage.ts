@@ -292,14 +292,12 @@ export class DatabaseStorage implements IStorage {
     }
     if (filters?.minAttended !== undefined) {
       conditions.push(sql`(
-        (SELECT COUNT(*) FROM attendance WHERE member_id = ${members.id} AND status = 'Present') +
-        (SELECT COUNT(*) FROM cell_attendance WHERE member_id = ${members.id})
+        SELECT COUNT(*) FROM attendance WHERE member_id = ${members.id} AND status = 'Present'
       ) >= ${filters.minAttended}`);
     }
     if (filters?.maxAttended !== undefined) {
       conditions.push(sql`(
-        (SELECT COUNT(*) FROM attendance WHERE member_id = ${members.id} AND status = 'Present') +
-        (SELECT COUNT(*) FROM cell_attendance WHERE member_id = ${members.id})
+        SELECT COUNT(*) FROM attendance WHERE member_id = ${members.id} AND status = 'Present'
       ) <= ${filters.maxAttended}`);
     }
     if (filters?.lastAttendedWithin !== undefined) {
@@ -307,18 +305,16 @@ export class DatabaseStorage implements IStorage {
       cutoff.setDate(cutoff.getDate() - filters.lastAttendedWithin);
       const cutoffStr = cutoff.toISOString().split('T')[0];
       conditions.push(sql`(
-        (SELECT MAX(service_date) FROM attendance WHERE member_id = ${members.id} AND status = 'Present') >= ${cutoffStr}::date
-        OR (SELECT MAX(meeting_date) FROM cell_attendance WHERE member_id = ${members.id}) >= ${cutoffStr}::date
-      )`);
+        SELECT MAX(service_date) FROM attendance WHERE member_id = ${members.id} AND status = 'Present'
+      ) >= ${cutoffStr}::date`);
     }
     if (filters?.notAttendedSince !== undefined) {
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - filters.notAttendedSince);
       const cutoffStr = cutoff.toISOString().split('T')[0];
-      conditions.push(sql`(
+      conditions.push(sql`
         COALESCE((SELECT MAX(service_date) FROM attendance WHERE member_id = ${members.id} AND status = 'Present'), '1900-01-01'::date) < ${cutoffStr}::date
-        AND COALESCE((SELECT MAX(meeting_date) FROM cell_attendance WHERE member_id = ${members.id}), '1900-01-01'::date) < ${cutoffStr}::date
-      )`);
+      `);
     }
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
@@ -368,7 +364,7 @@ export class DatabaseStorage implements IStorage {
 
     const memberIds = rows.map(r => r.id);
 
-    // Fetch service attendance stats for this page of members
+    // Fetch Sunday service attendance stats for this page of members
     const serviceStats = await db
       .select({
         memberId: attendance.memberId,
@@ -379,34 +375,14 @@ export class DatabaseStorage implements IStorage {
       .where(and(inArray(attendance.memberId, memberIds), eq(attendance.status, 'Present')))
       .groupBy(attendance.memberId);
 
-    // Fetch cell attendance stats for this page of members
-    const cellStats = await db
-      .select({
-        memberId: cellAttendance.memberId,
-        lastDate: sql<string>`MAX(${cellAttendance.meetingDate})::text`,
-        count: sql<number>`COUNT(*)::int`,
-      })
-      .from(cellAttendance)
-      .where(inArray(cellAttendance.memberId, memberIds))
-      .groupBy(cellAttendance.memberId);
-
     const serviceMap = new Map(serviceStats.map(s => [s.memberId, s]));
-    const cellMap = new Map(cellStats.map(s => [s.memberId, s]));
 
     const data: MemberWithAttendanceStats[] = rows.map(member => {
       const svc = serviceMap.get(member.id);
-      const cell = cellMap.get(member.id);
-      const lastSvc = svc?.lastDate ?? null;
-      const lastCell = cell?.lastDate ?? null;
-      let lastAttended: string | null = null;
-      if (lastSvc && lastCell) {
-        lastAttended = lastSvc > lastCell ? lastSvc : lastCell;
-      } else {
-        lastAttended = lastSvc ?? lastCell;
-      }
-      const timesAttended = (svc?.count ?? 0) + (cell?.count ?? 0);
+      const lastAttended = svc?.lastDate ?? null;
+      const timesAttended = svc?.count ?? 0;
       const timeSinceAttended = lastAttended
-        ? Math.floor((Date.now() - new Date(lastAttended).getTime()) / 86400000)
+        ? Math.floor((Date.now() - new Date(lastAttended + 'T12:00:00').getTime()) / 86400000)
         : null;
       return { ...member, lastAttended, timesAttended, timeSinceAttended };
     });
@@ -490,14 +466,12 @@ export class DatabaseStorage implements IStorage {
     }
     if (filters.minAttended !== undefined) {
       conditions.push(sql`(
-        (SELECT COUNT(*) FROM attendance WHERE member_id = ${members.id} AND status = 'Present') +
-        (SELECT COUNT(*) FROM cell_attendance WHERE member_id = ${members.id})
+        SELECT COUNT(*) FROM attendance WHERE member_id = ${members.id} AND status = 'Present'
       ) >= ${filters.minAttended}`);
     }
     if (filters.maxAttended !== undefined) {
       conditions.push(sql`(
-        (SELECT COUNT(*) FROM attendance WHERE member_id = ${members.id} AND status = 'Present') +
-        (SELECT COUNT(*) FROM cell_attendance WHERE member_id = ${members.id})
+        SELECT COUNT(*) FROM attendance WHERE member_id = ${members.id} AND status = 'Present'
       ) <= ${filters.maxAttended}`);
     }
     if (filters.lastAttendedWithin !== undefined) {
@@ -505,18 +479,16 @@ export class DatabaseStorage implements IStorage {
       cutoff.setDate(cutoff.getDate() - filters.lastAttendedWithin);
       const cutoffStr = cutoff.toISOString().split('T')[0];
       conditions.push(sql`(
-        (SELECT MAX(service_date) FROM attendance WHERE member_id = ${members.id} AND status = 'Present') >= ${cutoffStr}::date
-        OR (SELECT MAX(meeting_date) FROM cell_attendance WHERE member_id = ${members.id}) >= ${cutoffStr}::date
-      )`);
+        SELECT MAX(service_date) FROM attendance WHERE member_id = ${members.id} AND status = 'Present'
+      ) >= ${cutoffStr}::date`);
     }
     if (filters.notAttendedSince !== undefined) {
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - filters.notAttendedSince);
       const cutoffStr = cutoff.toISOString().split('T')[0];
-      conditions.push(sql`(
+      conditions.push(sql`
         COALESCE((SELECT MAX(service_date) FROM attendance WHERE member_id = ${members.id} AND status = 'Present'), '1900-01-01'::date) < ${cutoffStr}::date
-        AND COALESCE((SELECT MAX(meeting_date) FROM cell_attendance WHERE member_id = ${members.id}), '1900-01-01'::date) < ${cutoffStr}::date
-      )`);
+      `);
     }
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
     const rows = await db.select({ id: members.id }).from(members).where(whereClause);
