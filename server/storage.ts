@@ -292,16 +292,22 @@ export class DatabaseStorage implements IStorage {
       ) <= ${filters.maxAttended}`);
     }
     if (filters?.lastAttendedWithin !== undefined) {
-      conditions.push(sql`GREATEST(
-        COALESCE((SELECT MAX(service_date)::date FROM attendance WHERE member_id = ${members.id} AND status = 'Present'), '1900-01-01'::date),
-        COALESCE((SELECT MAX(meeting_date)::date FROM cell_attendance WHERE member_id = ${members.id}), '1900-01-01'::date)
-      ) >= CURRENT_DATE - ${filters.lastAttendedWithin}`);
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - filters.lastAttendedWithin);
+      const cutoffStr = cutoff.toISOString().split('T')[0];
+      conditions.push(sql`(
+        (SELECT MAX(service_date) FROM attendance WHERE member_id = ${members.id} AND status = 'Present') >= ${cutoffStr}::date
+        OR (SELECT MAX(meeting_date) FROM cell_attendance WHERE member_id = ${members.id}) >= ${cutoffStr}::date
+      )`);
     }
     if (filters?.notAttendedSince !== undefined) {
-      conditions.push(sql`GREATEST(
-        COALESCE((SELECT MAX(service_date)::date FROM attendance WHERE member_id = ${members.id} AND status = 'Present'), '1900-01-01'::date),
-        COALESCE((SELECT MAX(meeting_date)::date FROM cell_attendance WHERE member_id = ${members.id}), '1900-01-01'::date)
-      ) < CURRENT_DATE - ${filters.notAttendedSince}`);
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - filters.notAttendedSince);
+      const cutoffStr = cutoff.toISOString().split('T')[0];
+      conditions.push(sql`(
+        COALESCE((SELECT MAX(service_date) FROM attendance WHERE member_id = ${members.id} AND status = 'Present'), '1900-01-01'::date) < ${cutoffStr}::date
+        AND COALESCE((SELECT MAX(meeting_date) FROM cell_attendance WHERE member_id = ${members.id}), '1900-01-01'::date) < ${cutoffStr}::date
+      )`);
     }
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
@@ -473,16 +479,22 @@ export class DatabaseStorage implements IStorage {
       ) <= ${filters.maxAttended}`);
     }
     if (filters.lastAttendedWithin !== undefined) {
-      conditions.push(sql`GREATEST(
-        COALESCE((SELECT MAX(service_date)::date FROM attendance WHERE member_id = ${members.id} AND status = 'Present'), '1900-01-01'::date),
-        COALESCE((SELECT MAX(meeting_date)::date FROM cell_attendance WHERE member_id = ${members.id}), '1900-01-01'::date)
-      ) >= CURRENT_DATE - ${filters.lastAttendedWithin}`);
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - filters.lastAttendedWithin);
+      const cutoffStr = cutoff.toISOString().split('T')[0];
+      conditions.push(sql`(
+        (SELECT MAX(service_date) FROM attendance WHERE member_id = ${members.id} AND status = 'Present') >= ${cutoffStr}::date
+        OR (SELECT MAX(meeting_date) FROM cell_attendance WHERE member_id = ${members.id}) >= ${cutoffStr}::date
+      )`);
     }
     if (filters.notAttendedSince !== undefined) {
-      conditions.push(sql`GREATEST(
-        COALESCE((SELECT MAX(service_date)::date FROM attendance WHERE member_id = ${members.id} AND status = 'Present'), '1900-01-01'::date),
-        COALESCE((SELECT MAX(meeting_date)::date FROM cell_attendance WHERE member_id = ${members.id}), '1900-01-01'::date)
-      ) < CURRENT_DATE - ${filters.notAttendedSince}`);
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - filters.notAttendedSince);
+      const cutoffStr = cutoff.toISOString().split('T')[0];
+      conditions.push(sql`(
+        COALESCE((SELECT MAX(service_date) FROM attendance WHERE member_id = ${members.id} AND status = 'Present'), '1900-01-01'::date) < ${cutoffStr}::date
+        AND COALESCE((SELECT MAX(meeting_date) FROM cell_attendance WHERE member_id = ${members.id}), '1900-01-01'::date) < ${cutoffStr}::date
+      )`);
     }
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
     const rows = await db.select({ id: members.id }).from(members).where(whereClause);

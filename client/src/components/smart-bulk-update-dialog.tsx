@@ -16,24 +16,28 @@ interface SmartBulkUpdateDialogProps {
   onSuccess: () => void;
 }
 
-type TimesOp = "at_least" | "at_most" | "exactly" | "any";
+type TimesOp = "any" | "at_least" | "at_most" | "between" | "exactly";
 type LastAttendedPreset =
   | "" | "within30" | "within90" | "within180"
   | "over30" | "over60" | "over90" | "over180" | "over365" | "never";
 
 function buildCriteriaParams(
   timesOp: TimesOp,
-  timesValue: string,
+  timesMin: string,
+  timesMax: string,
   lastAttended: LastAttendedPreset,
   statusFilter: string,
 ) {
   const params: Record<string, string> = {};
 
-  const n = parseInt(timesValue, 10);
-  if (!isNaN(n) && timesOp !== "any") {
-    if (timesOp === "at_least") params.minAttended = String(n);
-    else if (timesOp === "at_most") params.maxAttended = String(n);
-    else if (timesOp === "exactly") { params.minAttended = String(n); params.maxAttended = String(n); }
+  const min = parseInt(timesMin, 10);
+  const max = parseInt(timesMax, 10);
+  if (timesOp === "at_least" && !isNaN(min)) params.minAttended = String(min);
+  else if (timesOp === "at_most" && !isNaN(max)) params.maxAttended = String(max);
+  else if (timesOp === "exactly" && !isNaN(min)) { params.minAttended = String(min); params.maxAttended = String(min); }
+  else if (timesOp === "between") {
+    if (!isNaN(min)) params.minAttended = String(min);
+    if (!isNaN(max)) params.maxAttended = String(max);
   }
 
   switch (lastAttended) {
@@ -57,7 +61,8 @@ export function SmartBulkUpdateDialog({ open, onClose, onSuccess }: SmartBulkUpd
 
   // Criteria state
   const [timesOp, setTimesOp] = useState<TimesOp>("any");
-  const [timesValue, setTimesValue] = useState("4");
+  const [timesMin, setTimesMin] = useState("4");
+  const [timesMax, setTimesMax] = useState("10");
   const [lastAttended, setLastAttended] = useState<LastAttendedPreset>("");
   const [statusFilter, setStatusFilter] = useState("");
 
@@ -72,9 +77,9 @@ export function SmartBulkUpdateDialog({ open, onClose, onSuccess }: SmartBulkUpd
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
-      setDebouncedParams(buildCriteriaParams(timesOp, timesValue, lastAttended, statusFilter));
+      setDebouncedParams(buildCriteriaParams(timesOp, timesMin, timesMax, lastAttended, statusFilter));
     }, 400);
-  }, [timesOp, timesValue, lastAttended, statusFilter]);
+  }, [timesOp, timesMin, timesMax, lastAttended, statusFilter]);
 
   const hasCriteria = Object.keys(debouncedParams).length > 0;
 
@@ -94,7 +99,7 @@ export function SmartBulkUpdateDialog({ open, onClose, onSuccess }: SmartBulkUpd
 
   const updateMutation = useMutation({
     mutationFn: async () => {
-      const criteria = buildCriteriaParams(timesOp, timesValue, lastAttended, statusFilter);
+      const criteria = buildCriteriaParams(timesOp, timesMin, timesMax, lastAttended, statusFilter);
       const updates: Record<string, string> = {};
       if (newStatus) updates.status = newStatus;
       if (newArchive) updates.archive = newArchive;
@@ -127,7 +132,7 @@ export function SmartBulkUpdateDialog({ open, onClose, onSuccess }: SmartBulkUpd
 
             <div className="space-y-2">
               <Label>Times attended (Sunday + Cell)</Label>
-              <div className="flex gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <Select value={timesOp} onValueChange={(v) => setTimesOp(v as TimesOp)}>
                   <SelectTrigger className="w-36">
                     <SelectValue />
@@ -136,20 +141,57 @@ export function SmartBulkUpdateDialog({ open, onClose, onSuccess }: SmartBulkUpd
                     <SelectItem value="any">Any amount</SelectItem>
                     <SelectItem value="at_least">At least</SelectItem>
                     <SelectItem value="at_most">At most</SelectItem>
+                    <SelectItem value="between">Between</SelectItem>
                     <SelectItem value="exactly">Exactly</SelectItem>
                   </SelectContent>
                 </Select>
-                {timesOp !== "any" && (
-                  <Input
-                    type="number"
-                    min={0}
-                    value={timesValue}
-                    onChange={(e) => setTimesValue(e.target.value)}
-                    className="w-24"
-                    placeholder="0"
-                  />
-                )}
-                {timesOp !== "any" && <span className="self-center text-sm text-muted-foreground">times</span>}
+
+                {timesOp === "between" ? (
+                  <>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={timesMin}
+                      onChange={(e) => setTimesMin(e.target.value)}
+                      className="w-20"
+                      placeholder="min"
+                    />
+                    <span className="text-sm text-muted-foreground">and</span>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={timesMax}
+                      onChange={(e) => setTimesMax(e.target.value)}
+                      className="w-20"
+                      placeholder="max"
+                    />
+                    <span className="text-sm text-muted-foreground">times</span>
+                  </>
+                ) : timesOp === "at_most" ? (
+                  <>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={timesMax}
+                      onChange={(e) => setTimesMax(e.target.value)}
+                      className="w-24"
+                      placeholder="0"
+                    />
+                    <span className="text-sm text-muted-foreground">times</span>
+                  </>
+                ) : timesOp !== "any" ? (
+                  <>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={timesMin}
+                      onChange={(e) => setTimesMin(e.target.value)}
+                      className="w-24"
+                      placeholder="0"
+                    />
+                    <span className="text-sm text-muted-foreground">times</span>
+                  </>
+                ) : null}
               </div>
             </div>
 
