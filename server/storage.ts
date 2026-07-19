@@ -55,7 +55,7 @@ import { eq, and, sql, desc, inArray, asc, gt, gte, lte, ilike, or, isNull } fro
 
 export interface IStorage {
   // Members
-  getMembers(filters?: { status?: string; statuses?: string[]; gender?: string; occupation?: string; cluster?: string; search?: string; page?: number; limit?: number; minAttended?: number; maxAttended?: number; lastAttendedWithin?: number; notAttendedSince?: number; archiveStatuses?: string[] }): Promise<PaginatedResult<MemberWithAttendanceStats>>;
+  getMembers(filters?: { status?: string; statuses?: string[]; gender?: string; occupation?: string; cluster?: string; search?: string; page?: number; limit?: number; minAttended?: number; maxAttended?: number; lastAttendedWithin?: number; notAttendedSince?: number; archiveStatuses?: string[]; sortBy?: "firstName" | "lastName" | "joinDate" | "status" | "createdAt" | "updatedAt"; sortOrder?: "asc" | "desc"; joinDateFrom?: string; joinDateTo?: string }): Promise<PaginatedResult<MemberWithAttendanceStats>>;
   getMembersList(): Promise<MemberSlim[]>;
   getMemberById(id: string): Promise<Member | undefined>;
   createMember(member: InsertMember): Promise<Member>;
@@ -68,7 +68,7 @@ export interface IStorage {
   mergeMembers(primaryId: string, duplicateIds: string[]): Promise<Member>;
 
   // First Timers
-  getFirstTimers(params?: { page?: number; limit?: number; search?: string; seeingAgain?: string; dateFrom?: string; dateTo?: string }): Promise<PaginatedResult<FirstTimer>>;
+  getFirstTimers(params?: { page?: number; limit?: number; search?: string; seeingAgain?: string; dateFrom?: string; dateTo?: string; sortBy?: "firstName" | "lastName" | "createdAt" | "seeingAgain"; sortOrder?: "asc" | "desc" }): Promise<PaginatedResult<FirstTimer>>;
   getFirstTimerById(id: string): Promise<FirstTimer | undefined>;
   createFirstTimer(firstTimer: InsertFirstTimer): Promise<FirstTimer>;
   updateFirstTimer(id: string, data: Partial<InsertFirstTimer>): Promise<FirstTimer>;
@@ -76,6 +76,7 @@ export interface IStorage {
 
   // Attendance
   getAttendance(filters: { memberId?: string; serviceDate?: string }): Promise<Attendance[]>;
+  getAttendanceList(filters: { memberId?: string; status?: string; dateFrom?: string; dateTo?: string; page?: number; limit?: number }): Promise<PaginatedResult<Attendance>>;
   getAttendanceByDate(serviceDate: string): Promise<Record<string, string>>;
   toggleAttendance(memberId: string, serviceDate: string, status: string): Promise<Attendance>;
   markAllPresentByStatus(serviceDate: string, status: string): Promise<void>;
@@ -255,6 +256,11 @@ export class DatabaseStorage implements IStorage {
     maxAttended?: number;
     lastAttendedWithin?: number;
     notAttendedSince?: number;
+    archiveStatuses?: string[];
+    sortBy?: "firstName" | "lastName" | "joinDate" | "status" | "createdAt" | "updatedAt";
+    sortOrder?: "asc" | "desc";
+    joinDateFrom?: string;
+    joinDateTo?: string;
   }): Promise<PaginatedResult<MemberWithAttendanceStats>> {
     const page = filters?.page ?? 1;
     const limit = filters?.limit ?? 50;
@@ -278,6 +284,12 @@ export class DatabaseStorage implements IStorage {
     if (filters?.search) {
       const term = `%${filters.search}%`;
       conditions.push(sql`(${members.firstName} ILIKE ${term} OR ${members.lastName} ILIKE ${term} OR ${members.mobilePhone} ILIKE ${term})`);
+    }
+    if (filters?.joinDateFrom) {
+      conditions.push(gte(members.joinDate, filters.joinDateFrom));
+    }
+    if (filters?.joinDateTo) {
+      conditions.push(lte(members.joinDate, filters.joinDateTo));
     }
     if (filters?.archiveStatuses && filters.archiveStatuses.length > 0) {
       const hasNull = filters.archiveStatuses.includes('__null__');
@@ -324,6 +336,21 @@ export class DatabaseStorage implements IStorage {
       .from(members)
       .where(whereClause);
 
+    // Allowlisted sort columns only — callers can never sort by an arbitrary
+    // DB column. Defaults to the pre-existing firstName/lastName ordering.
+    const SORT_COLUMNS = {
+      firstName: members.firstName,
+      lastName: members.lastName,
+      joinDate: members.joinDate,
+      status: members.status,
+      createdAt: members.createdAt,
+      updatedAt: members.updatedAt,
+    } as const;
+    const direction = filters?.sortOrder === "asc" ? asc : desc;
+    const orderByClause = filters?.sortBy
+      ? [direction(SORT_COLUMNS[filters.sortBy]), asc(members.lastName)]
+      : [asc(members.firstName), asc(members.lastName)];
+
     let query = db
       .select({
         id: members.id,
@@ -348,7 +375,7 @@ export class DatabaseStorage implements IStorage {
         updatedAt: members.updatedAt,
       })
       .from(members)
-      .orderBy(asc(members.firstName), asc(members.lastName))
+      .orderBy(...orderByClause)
       .limit(limit)
       .offset(offset);
 
@@ -617,7 +644,16 @@ export class DatabaseStorage implements IStorage {
     return await this.updateMember(primaryId, updates);
   }
 
-  async getFirstTimers(params?: { page?: number; limit?: number; search?: string; seeingAgain?: string; dateFrom?: string; dateTo?: string }): Promise<PaginatedResult<FirstTimer>> {
+  async getFirstTimers(params?: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    seeingAgain?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    sortBy?: "firstName" | "lastName" | "createdAt" | "seeingAgain";
+    sortOrder?: "asc" | "desc";
+  }): Promise<PaginatedResult<FirstTimer>> {
     const page = params?.page ?? 1;
     const limit = params?.limit ?? 50;
     const offset = (page - 1) * limit;
@@ -651,9 +687,20 @@ export class DatabaseStorage implements IStorage {
       .from(firstTimers)
       .where(where);
 
+    // Allowlisted sort columns only — callers can never sort by an arbitrary
+    // DB column. Defaults to the pre-existing createdAt-descending ordering.
+    const SORT_COLUMNS = {
+      firstName: firstTimers.firstName,
+      lastName: firstTimers.lastName,
+      createdAt: firstTimers.createdAt,
+      seeingAgain: firstTimers.seeingAgain,
+    } as const;
+    const direction = params?.sortOrder === "asc" ? asc : desc;
+    const orderByClause = params?.sortBy ? direction(SORT_COLUMNS[params.sortBy]) : desc(firstTimers.createdAt);
+
     const data = await db.select().from(firstTimers)
       .where(where)
-      .orderBy(desc(firstTimers.createdAt))
+      .orderBy(orderByClause)
       .limit(limit)
       .offset(offset);
 
@@ -750,6 +797,43 @@ export class DatabaseStorage implements IStorage {
       return await query.where(and(...conditions));
     }
     return await query;
+  }
+
+  // Paginated attendance listing for the /api/v1 surface. Kept separate from
+  // getAttendance() above (which the legacy /api/reporting/attendance route
+  // returns verbatim as a bare array) so that response shape never changes.
+  async getAttendanceList(filters: {
+    memberId?: string;
+    status?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<PaginatedResult<Attendance>> {
+    const page = filters.page ?? 1;
+    const limit = filters.limit ?? 50;
+    const offset = (page - 1) * limit;
+
+    const conditions = [];
+    if (filters.memberId) conditions.push(eq(attendance.memberId, filters.memberId));
+    if (filters.status) conditions.push(eq(attendance.status, filters.status));
+    if (filters.dateFrom) conditions.push(gte(attendance.serviceDate, filters.dateFrom));
+    if (filters.dateTo) conditions.push(lte(attendance.serviceDate, filters.dateTo));
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const [{ total }] = await db
+      .select({ total: sql<number>`COUNT(*)::int` })
+      .from(attendance)
+      .where(whereClause);
+
+    let query = db.select().from(attendance).orderBy(desc(attendance.serviceDate)).limit(limit).offset(offset);
+    if (whereClause) {
+      query = query.where(whereClause) as any;
+    }
+    const data = await query;
+
+    return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
   async getAttendanceByDate(serviceDate: string): Promise<Record<string, string>> {

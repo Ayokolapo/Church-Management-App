@@ -7,6 +7,8 @@ import multer from "multer";
 import { parse } from "csv-parse/sync";
 import { stringify } from "csv-stringify/sync";
 import { setupAuth, registerAuthRoutes, isAuthenticated, requireRole, requirePermission, invalidatePermissionsCache } from "./replit_integrations/auth";
+import { apiV1Router } from "./api/v1";
+import { apiNotFoundHandler } from "./api/notFound";
 import bcrypt from "bcryptjs";
 import nodemailer from "nodemailer";
 import { Resend } from "resend";
@@ -2151,6 +2153,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: error.message || "Failed to send notification" });
     }
   });
+
+  // Standardized, versioned API surface for external integrations. Mounted
+  // after every legacy /api/* route above so it can never shadow one, and
+  // (per app.ts) registerRoutes() fully completes before the frontend's SPA
+  // catch-all is wired in, so /api/v1 always wins over that too.
+  app.use("/api/v1", apiV1Router);
+
+  // Any /api/* path that didn't match a legacy or v1 route above must return
+  // JSON, never fall through to the SPA catch-all's index.html.
+  app.use("/api", apiNotFoundHandler);
 
   const httpServer = createServer(app);
   return httpServer;

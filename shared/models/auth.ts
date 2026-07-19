@@ -51,3 +51,26 @@ export const signupSchema = z.object({
 });
 
 export type SignupData = z.infer<typeof signupSchema>;
+
+// API access tokens — opaque, DB-backed bearer tokens for external integrations
+// (Python scripts, Power BI, workflow tools, mobile apps, etc). Only the SHA-256
+// hash of the raw token is ever stored; the raw value is returned once at issuance.
+export const apiTokens = pgTable(
+  "api_tokens",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    tokenHash: varchar("token_hash").notNull().unique(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+    revokedAt: timestamp("revoked_at"),
+    lastUsedAt: timestamp("last_used_at"),
+  },
+  (table) => [
+    index("IDX_api_tokens_user_id").on(table.userId),
+    index("IDX_api_tokens_token_hash").on(table.tokenHash),
+  ]
+);
+
+export type ApiToken = typeof apiTokens.$inferSelect;
+export type InsertApiToken = typeof apiTokens.$inferInsert;
